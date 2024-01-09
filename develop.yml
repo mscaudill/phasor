@@ -1,0 +1,38 @@
+# requirements for phasor's development environment
+name: phasor
+dependencies:
+  - numpy
+  - scipy
+  - matplotlib
+  - ipython
+  - notebook
+  - scikit-image
+  - pillow
+  - psutil
+  # testing
+  - pytest
+  - pytest-cov
+    # Linting & format
+  - isort
+  - mypy
+  - pylint
+  # pypi packages
+  - pip
+  - pip:
+    - openseize
+    - tqdm
+    # testing
+    - pytest-lazy-fixture
+    # formatting
+    - black
+    # versioning
+    - bumpver
+    # doc builders
+    - mkdocs
+    - mkdocs-material
+    - "mkdocstrings[python]"
+    - mkdocs-jupyter
+    # packaging
+    - pip-tools
+    - build
+    - twine
