@@ -20,11 +20,11 @@ dependencies:
   - pip
   - pip:
     - openseize
-    - tqdm
     # testing
     - pytest-lazy-fixture
     # formatting
     - black
+    - codespell
     # versioning
     - bumpver
     # doc builders
