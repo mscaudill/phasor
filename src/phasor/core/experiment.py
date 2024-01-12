@@ -9,9 +9,10 @@ import pickle
 from typing import Any, Dict, Optional, Self, Union
 
 import numpy.typing as npt
+from phasor.core.mixins import ReprMixin
 
 
-class Experiment:
+class Experiment(ReprMixin):
     """An object for storing, modifying and saving data and intermediate
     results in Phasor.
 
@@ -78,17 +79,3 @@ class Experiment:
         """Returns the dict representation of this Experiment."""
 
         return {key: value for key, value in self.__dict__.items()}
-
-    def __repr__(self) -> str:
-        """Returns string representation emulating instance construction."""
-
-        name = type(self).__name__
-        params = str(inspect.signature(type(self).__init__))
-        return f'{name}{params}'
-
-    def __str__(self) -> str:
-        """Returns string representation for print call."""
-
-        header = f"{type(self).__name__:{'-'}{'^'}{20}}"
-        attrs = '\n'.join(f"{k} = {str(v)}" for k, v in self.__dict__.items())
-        return '\n'.join((header, attrs))
