@@ -3,7 +3,11 @@ name: phasor
 dependencies:
   - numpy
   - scipy
-  - matplotlib
+  # python 3.8 and > no longer supports modifying grouper shared axes
+  # see https://matplotlib.org/stable/api/prev_api_changes/api_changes_3.8.0.html#
+  # groupers-from-get-shared-x-axes-get-shared-y-axes-are-immutable
+  # A change needs to be made in openseize to correct this issue
+  - matplotlib<=3.7
   - ipython
   - notebook
   - scikit-image
