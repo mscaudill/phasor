@@ -78,7 +78,16 @@ if __name__ == '__main__':
 
     import time
 
-    x = np.random.random((40, 3, 500 * 90))
+    #x = np.random.random((40, 3, 500 * 90))
+    amplitude = 2
+    freq = 8
+    fs = 500
+    duration = 1
+    phi = 0
+    times = np.arange(0, fs *(duration + 1/fs)) / fs
+    a = amplitude * np.sin(2 * np.pi * freq * times + phi)
+    b = amplitude * np.sin(2 * np.pi * freq * times + phi+np.pi/2)
+    x = np.stack((a, b))
 
     t0 = time.perf_counter()
     sa = analytic(x, axis=-1)
