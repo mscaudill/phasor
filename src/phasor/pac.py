@@ -6,6 +6,8 @@ from collections import defaultdict
 
 import numpy as np
 
+from phasor.core import numerical
+
 
 def modulation_index(phases, amplitudes, nbins=18):
     """ """
@@ -39,10 +41,59 @@ def modulation_index(phases, amplitudes, nbins=18):
     # normalize to obtain discrete pseuodo PDF
     pdf = np.array(means) / np.sum(means)
 
+    """
     # FIXME move these steps to numerical ??
     shannon = -1 * np.sum(pdf * np.log10(pdf))
     d_kl = np.log10(nbins) - shannon
     return d_kl / np.log10(nbins)
+    """
+    return pdf
+
+def densities(phases, amplitudes, axis=-1, nbins=18):
+    """ """
+
+    unit = 360 if max(phases) > 2 * np.pi else 2 * np.pi
+
+    bins = np.linspace(unit // nbins, unit, num=nbins)
+    digitized = np.digitize(phases, bins=bins)
+
+    """ Only works for 1D phases and 1D amplitudes
+    means = []
+    for phase_bin, _ in enumerate(bins):
+
+        locs = np.where(digitized == phase_bin)
+        means.append(np.mean(amplitudes[locs]))
+
+    return np.array(means) / np.sum(means)
+    """
+
+    # need to determine if handling ndarrays of phases and amplitudes is really
+    # necessary. It may not for cross channel MI measures which this can't
+    # handle as easily as passing in each phase and amplitude series as above
+    # a simple way would be to roll the channel axis of the amp array
+    result = []
+    x = numerical.islices(digitized, axis=axis)
+    y = numerical.islices(amplitudes, axis=axis)
+    for bin_series, amp_series in zip(x, y):
+
+        means = []
+        for phase_bin, _ in enumerate(bins):
+
+            locs = np.where(bin_series == phase_bin)
+            means.append(np.mean(amp_series[locs]))
+
+        result.append(np.array(means) / np.sum(means))
+
+    result = np.stack(result)
+    shape = list(phases.shape)
+    shape[axis] = nbins
+    result.reshape(*shape)
+    return result
+
+
+
+
+
 
 if __name__ == '__main__':
 
@@ -60,5 +111,6 @@ if __name__ == '__main__':
     ph = phases(sa)
     amp = envelopes(sa)
 
-    MI = modulation_index(ph, amp)
+    pdf = densities(ph, amp)
+    pdf0 = modulation_index(ph, amp)
 
