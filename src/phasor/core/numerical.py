@@ -77,57 +77,83 @@ def phases(analytic, deg=True):
     return x
 
 
-def normalize_axis(axis: int, ndim: int):
-    """Returns a positive axis index for a supplied axis index of an ndim
-    array.
+def density(
+        x: npt.NDArray,
+        y: npt.NDArray,
+        extrema: List[float, float],
+        binsize: int,
+    ) -> npt.NDArray:
+    """Estimates the distribution of y-values over binned x-values.
 
-    Args:
-        axis:
-            An positive or negative integer axis index.
-        ndim:
-            The number of dimensions to normalize axis by.
-    """
+    This probability density function estimate is created by:
+        1. binning x-values between extrema into nbins
+        2. collecting and averaging y-values for each bin i
+        3. returning P(i) = mean(y)_i / sum_i(mean(y)_i)
 
-    axes = np.arange(ndim)
-    return axes[axis]
-
-
-def islices(x: npt.NDArray, axis: int = -1):
-    """An iterator yielding successive 1D slices from an ndarray.
+    This is a generalized version of Tort 2010's method for estimating the
+    amplitude distribution over binned phase values. This method may be used to
+    build phase-amplitude, amplitude-amplitude, or phase-phase distribution
+    estimates.
 
     Args:
         x:
-            An ndarray from which 1D slices will be made.
-        axis:
-            The axis of x containing the elements of each 1D slice.
+            A 1-D array of inputs to be binned.
+        y:
+            A 1-D array of responses to signal x.
+        extrema:
+            The min and max value that x can take. These values need not be in x.
+        binsize:
+            The size of each bin used to partition the extrema range. The number
+            of bins will be computed as np.diff(extrema) / binsize + 1.
 
-    Examples:
-        >>> x = np.arange(60).reshape(2, 3, 10)
-        >>> print(x)
-        >>> # elements along last axis will be elements in each slice
-        >>> items = islice(x, axis=-1)
-        >>> next(items)
-        array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-        >>> next(items)
-        array([10, 11, 12, 13, 14, 15, 16, 17, 18, 19])
-        >>> next(items)
-        array([20, 21, 22, 23, 24, 25, 26, 27, 28, 29])
+    Returns:
+        A 1-D array of length nbins of density estimates.
 
-    Yields:
-        Successive 1-D slices whose elements match x's elements along axis for
-        every 1D slice. The ordering of yieled arrays matches 'C' order in which
-        the first axis changes slowest.
+    Raises:
+        A ValueError is issued if the values in extrema are not divisible by the
+        binsize.
+
+    References:
+        Tort et. al. Measuring Phase-Amplitude Coupling between Neuronal
+        Oscillations of Different Frequencies. J. Neurophysiol. 104 1195-1210.
     """
 
-    ax = normalize_axis(axis, x.ndim)
+    spread = extrema[1] - extrema[0]
+    if np.mod(spread, binsize):
+        msg = '{} units between {} is not divisible by a binsize of {}'
+        raise ValueError(msg.format(spread, extrema, binsize)
 
-    idxs = [range(s) for axis, s in enumerate(x.shape) if axis != ax]
-    for multiindex in itertools.product(*idxs):
+    nbins = spread // binsize + 1
+    bins = np.linspace(*extrema, num=nbins)
+    digitized = np.digitize(phases, bins=bins)
 
-        slicer = [slice(idx, idx+1) for idx in multiindex]
-        slicer.insert(ax, slice(None))
+    means = []
+    for phase_bin, _ in enumerate(bins):
 
-        yield np.squeeze(x[tuple(slicer)])
+        locs = np.where(digitized == phase_bin)
+        means.append(np.mean(amplitudes[locs]))
+
+    return np.array(means) / np.sum(means)
+
+
+def shannon(pdf: npt.NDArray, axis=-1, base=np.log10) -> npt.NDArray:
+    """Returns the Shannon entropy of a discrete probability distribution.
+
+    Args:
+        pdf:
+            An ndarray whose values along axis of all 1-D slices sum to 1 and
+            are greater than or equal to 0.
+        axis:
+            The axis along which the entropy will be measured.
+        base:
+            The base units of the log for details see:
+            https://en.wikipedia.org/wiki/Entropy_(information_theory)
+
+    Returns:
+        An ndarray of 1 less dimension than pdf.
+    """
+
+    return -1 * np.sum(pdf * base(pdf))
 
 
 
