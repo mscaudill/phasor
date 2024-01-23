@@ -1,4 +1,11 @@
-"""
+"""A collection of cross-frequency coupling metrics including:
+
+    - modulation:
+      A measure of the divergence of a bin-averaged distribuition from a uniform
+      distribution. This method is derived in Tort et. al. Measuring
+      Phase-Amplitude Coupling between Neuronal Oscillations of Different
+      Frequencies. J. Neurophysiol. 104 1195-1210.
+
 
 """
 
@@ -10,13 +17,18 @@ import numpy.typing as npt
 from phasor.core import numerical
 
 
-def modulation_index(
+def modulation(
         x: npt.NDArray,
         y: npt.NDArray,
         extrema: List[float, float] = [0, 360],
         nbins: int = 18,
         base=np.log10):
-    """FIXME .
+    """A entropy-based metric measuring the divergence of bin-averaged y-values
+    relative to a uniform distribution.
+
+    This is a generalized version of the modulation index measure given in Tort
+    2010. It is suitable for assessing amplitude-amplitude, phase-phase and
+    phase-amplitude coupling.
 
     Args:
         x:
@@ -27,6 +39,9 @@ def modulation_index(
             The min and max value that x can take. These values need not be in x.
         nbins:
             The number of bins between extrema over which x will be digitized.
+
+    Examples:
+    >>> 
 
     Returns:
         A float modulation index value
