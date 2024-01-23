@@ -1,5 +1,4 @@
-"""
-"""
+"""A collection of functions used to compute numerical results in Phasor."""
 
 import itertools
 
@@ -83,7 +82,7 @@ def density(
         extrema: List[float, float],
         binsize: int,
     ) -> npt.NDArray:
-    """Estimates the distribution of y-values over binned x-values.
+    """Estimates the distribution of bin averaged y-values over binned x-values.
 
     This probability density function estimate is created by:
         1. binning x-values between extrema into nbins
