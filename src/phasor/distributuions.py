@@ -5,7 +5,7 @@ from scipy.linalg import hankel, toeplitz
 
 from phasor.core.arraytools import pad_axis_to
 
-def wigner(signal, fs, analytic=True, axis=-1):
+def _wigner(signal, fs, analytic=True, axis=-1):
     """ """
 
     # I want to get this to work for ndarrays
@@ -51,15 +51,19 @@ def ambiguity(data, fs, analytic=True):
             frequencies to prevent aliasing. Default is True.
 
     Returns:
-        A 3-tuple consisting of (1) a len(data) x len(data) ambiguity  matrix
-        with doppler frequency shifts along the x-axis and doppler delays along
-        the y-axis, (2) a 1-D array of len(data) doppler frequencies in [0,
-        fs/2] and (3) a 1-D array of len(data) doppler lags in [-len(data),
-        len(data)].
+        A 3-tuple consisting of:
+        (1) An ambiguity  matrix with frequency shifts (etas) along axis=0, &
+        doppler delays (taus) along axis=1.
+        (2) A 1-D array of len(data) + 1 doppler frequencies. The order of these
+        frequencies is given by numpy.fft.fftfreq. Numpy's fft shift can be used
+        to center these frequencies and the ambiguity matrix about the zero
+        frequency for plotting.
+        (3) A 1-D array of len(data) + 1 doppler lags in [-len(data), len(data)]
+
     Notes:
         We compute the ambiguity response by constructing Toeplitz matrices that
         hold both the forward and reverse data copies. Consider this signal [7,4,6].
-        Its delay can range from -3 to +3 here are the reversed & forward delayed
+        Its delay can range from -3 to +3. Here are the reversed & forward delayed
         signals.
 
          delay  Reversed  Forward  Product
@@ -71,9 +75,9 @@ def ambiguity(data, fs, analytic=True):
          2      [0,0,7]   [6,0,0]  [0,0,0]
          3      [0,0,0]   [0,0,0]  [0,0,0]
 
-        Notice that only where delay <= len(signal) // 2 = {-1,0,1} do we have
-        a non-zero product and that "reversed" is a Toeplitz and "forward" is
-        a flip of reversed on 0th axis.
+        Notice non-zero products occur at delays = {-1,0,1} and the Reversed and
+        Forward signals are a Toeplitz and a flipped Toeplitz matrix
+        respectively.
 
     References:
         Najmi, A. H. "The Wigner distribution: A time-frequency analysis tool."
@@ -89,37 +93,36 @@ def ambiguity(data, fs, analytic=True):
         x = sps.hilbert(x)
 
     # Construct Toeplitz
+    # max_shift depends on even/odd signal length
     max_shift = len(x) // 2 if len(x) % 2 else len(x) // 2 - 1
     first_col = pad_axis_to(x[max_shift::-1], 2 * max_shift + 1, side='right')
     first_row = pad_axis_to(x[max_shift:], len(x), side='right')
     reverse = toeplitz(first_col, first_row)
     forward = np.flip(reverse, axis=0)
 
-    # FIXME we need to resolve the uncertainty about whether the amb is computed
-    # at negative frequencies. I think it must be
-
     # compute ambiguity
     amb = np.fft.ifft(np.conjugate(reverse) * forward, axis=1)
-    freqs = np.fft.fftfreq(len(x), d=1/fs)
 
-    # fftshift is useful for visualizing the autoterm but need not be returned
-    amb = np.fft.ifftshift(amb, axes=-1)
-    freqs = np.fft.ifftshift(freqs)
-
-    # FIXME we know b/c analytic there are no negative frequencies
-    """
-    amb = np.fft.ifftshift(amb, axes=-1)
-    freqs = np.fft.ifftshift(freqs)
-    idxs = slice(len(freqs)//2, None)
-    amb = amb[:, idxs]
-    freqs = freqs[idxs]
-    """
-
-    duration = len(x) / fs
-    lags = 2*np.arange(-max_shift, max_shift+1) / fs
-    return amb, lags, freqs
+    # compute doppler shifts and lags (eta and tau respectively)
+    etas = np.fft.fftfreq(len(x), d=1/fs)
+    # lags are 1/2 an iteger shift in ambiguity defn.
+    taus = 2*np.arange(-max_shift, max_shift+1) / fs
+    return amb, etas, taus
 
 
+def wigner(data, fs, analytic=True):
+    """ """
+
+    amb, etas, taus = ambiguity(data, fs, analytic)
+    result = np.fft.fftshift(np.fft.fft2(amb), axes=0)
+    # result shape will be time, frequencies
+    times = np.arange(0, len(signal)/fs, 1/fs)
+    
+    # FIXME
+    # the delays are 2x the shifts which means freqs must be halved
+    # tau limits the frequencies to 1/2 the nyquist ??
+    freqs = 1/2*np.fft.fftshift(np.fft.fftfreq(result.shape[0], d=1/fs))
+    return result, freqs, times
 
 if __name__ == '__main__':
 
@@ -150,7 +153,7 @@ if __name__ == '__main__':
     ambiguity(signal, fs=100, analytic=False)
     """
 
-    
+    """ 
     fs = 32
     duration = 12
     time = np.linspace(0, duration, duration*fs + 1)
@@ -167,5 +170,23 @@ if __name__ == '__main__':
     #ax.pcolormesh(time, freqs, np.abs(wig))
     ax.pcolormesh(freqs, lags, np.abs(amb), shading='nearest')
     #ax.pcolormesh(np.abs(amb), shading='flat')
+    plt.show()
+    """
+
+    fs = 128
+    duration = 12
+    time = np.linspace(0, duration, duration*fs + 1)
+    #time = np.arange(0, 5, 1/fs)
+    #signal = np.sin(2*np.pi*4.5*time) + np.sin(2*np.pi*9*time)
+    signal = np.sin(2*np.pi*20*time)
+    signal[:6*fs] = 0
+    signal[10*fs:] = 0
+    #signal += np.random.random(fs*duration+1) * 0.25
+    w, freqs, times = wigner(signal, fs=fs, analytic=False)
+    wig = np.abs(w)
+    
+    fig, ax = plt.subplots()
+    #ax.pcolormesh(time, freqs, np.abs(wig))
+    ax.pcolormesh(times, freqs, wig, shading='nearest')
     plt.show()
 
