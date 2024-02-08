@@ -42,7 +42,7 @@ def ambiguity(data, fs, analytic=True):
 
     Args:
         data:
-            The data whose ambiguity is to be measured.
+            The data whose ambiguity is to be measured. May be real or complex.
         fs:
             The sampling rate of the data array.
         analytic:
@@ -52,13 +52,13 @@ def ambiguity(data, fs, analytic=True):
 
     Returns:
         A 3-tuple consisting of:
-        (1) An ambiguity  matrix with frequency shifts (etas) along axis=0, &
-        doppler delays (taus) along axis=1.
-        (2) A 1-D array of len(data) + 1 doppler frequencies. The order of these
+        (1) An ambiguity  matrix with doppler delays (taus) along axis=0 and
+        frequency shifts (etas) along axis=1.
+        (2) A 1-D array of doppler delays in [-len(data), len(data)]
+        (3) A 1-D array of len(data) + 1 doppler frequencies. The order of these
         frequencies is given by numpy.fft.fftfreq. Numpy's fft shift can be used
         to center these frequencies and the ambiguity matrix about the zero
         frequency for plotting.
-        (3) A 1-D array of len(data) + 1 doppler lags in [-len(data), len(data)]
 
     Notes:
         We compute the ambiguity response by constructing Toeplitz matrices that
@@ -105,27 +105,29 @@ def ambiguity(data, fs, analytic=True):
 
     # compute doppler shifts and lags (eta and tau respectively)
     etas = np.fft.fftfreq(len(x), d=1/fs)
-    # lags are 1/2 an iteger shift in ambiguity defn.
-    taus = 2*np.arange(-max_shift, max_shift+1) / fs
-    return amb, etas, taus
+    # taus are 2X an iteger shift in ambiguity defn.
+    taus = 2 * np.arange(-max_shift, max_shift+1) / fs
+    return amb, taus, etas
 
 
-def wigner(data, fs, analytic=True):
+def wigner(data, fs, shift=True, **kwargs):
     """ """
 
-    amb, etas, taus = ambiguity(data, fs, analytic)
-    result = np.fft.fftshift(np.fft.fft2(amb), axes=0)
-    # result shape will be time, frequencies
+    amb, taus, etas = ambiguity(data, fs, **kwargs)
+
+    result = 2 * np.fft.fft2(amb)
     times = np.arange(0, len(signal)/fs, 1/fs)
-    
-    # FIXME
-    # the delays are 2x the shifts which means freqs must be halved
-    # tau limits the frequencies to 1/2 the nyquist ??
-    freqs = 1/2*np.fft.fftshift(np.fft.fftfreq(result.shape[0], d=1/fs))
+    freqs = 1/2 * np.fft.fftfreq(result.shape[0], d=1/fs)
+
+    if shift:
+        result = np.fft.fftshift(result, axes=0)
+        freqs = np.fft.fftshift(freqs)
+
     return result, freqs, times
 
 if __name__ == '__main__':
 
+    import time
     import matplotlib.pyplot as plt
     from phasor.data.synthetic import PACSignal
 
@@ -148,45 +150,52 @@ if __name__ == '__main__':
     plt.show()
     """
 
+
     """
     signal = np.array([7,4,6,3, 2])
-    ambiguity(signal, fs=100, analytic=False)
+    amb, taus, etas = ambiguity(signal, fs=100, analytic=False)
     """
 
-    """ 
+    """
+    #ambiguity test
     fs = 32
     duration = 12
     time = np.linspace(0, duration, duration*fs + 1)
-    #time = np.arange(0, 5, 1/fs)
     #signal = np.sin(2*np.pi*4.5*time) + np.sin(2*np.pi*9*time)
     signal = np.sin(2*np.pi*12*time)
     signal[:6*fs] = 0
     signal[10*fs:] = 0
     #signal += np.random.random(fs*duration+1) * 0.25
-    #wig = wigner(signal, fs=fs)
-    amb, lags, freqs = ambiguity(signal, fs)
+    amb, taus, etas = ambiguity(signal, fs, analytic=False)
+
+    # for plotting fftshift amb and etas
+    amb = np.fft.ifftshift(amb, axes=1)
+    etas = np.fft.ifftshift(etas)
 
     fig, ax = plt.subplots()
-    #ax.pcolormesh(time, freqs, np.abs(wig))
-    ax.pcolormesh(freqs, lags, np.abs(amb), shading='nearest')
-    #ax.pcolormesh(np.abs(amb), shading='flat')
+    ax.pcolormesh(etas, taus, np.abs(amb), shading='nearest')
     plt.show()
     """
 
+
+    #wigner tests
     fs = 128
-    duration = 12
-    time = np.linspace(0, duration, duration*fs + 1)
+    duration = 30
+    times = np.linspace(0, duration, duration*fs + 1)
     #time = np.arange(0, 5, 1/fs)
-    #signal = np.sin(2*np.pi*4.5*time) + np.sin(2*np.pi*9*time)
-    signal = np.sin(2*np.pi*20*time)
+    signal = 2*np.sin(2*np.pi*4.5*times) + 2*np.sin(2*np.pi*18*times)
+    #signal = np.sin(2*np.pi*4.5*times)
     signal[:6*fs] = 0
     signal[10*fs:] = 0
-    #signal += np.random.random(fs*duration+1) * 0.25
-    w, freqs, times = wigner(signal, fs=fs, analytic=False)
+    signal += np.random.random(fs*duration+1) * 0.25
+    t0 = time.perf_counter()
+    w, freqs, t = wigner(signal, fs=fs, analytic=True)
     wig = np.abs(w)
-    
-    fig, ax = plt.subplots()
-    #ax.pcolormesh(time, freqs, np.abs(wig))
-    ax.pcolormesh(times, freqs, wig, shading='nearest')
-    plt.show()
+    print(f'Computed Wigner in {time.perf_counter() - t0} secs')
 
+    # FIXME need to restrict plots using nearest function to help
+    fig, ax = plt.subplots()
+    #ax.pcolormesh(t, freqs, np.abs(wig))
+    ax.pcolormesh(t, freqs, wig, shading='nearest')
+    plt.show()
+    
