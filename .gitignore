@@ -19,6 +19,7 @@ dist/
 
 # paper files
 *.bak
+papers/
 
 # ignore builds of websites
 site/
