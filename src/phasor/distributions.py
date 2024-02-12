@@ -12,14 +12,14 @@ from scipy.linalg import hankel, toeplitz
 from phasor.core.arraytools import pad_axis_to
 
 
-def autocorrelation(
+def autocovariance(
         signal: npt.NDArray,
         detrend: bool = True,
         analytic: bool = True,
 )-> npt.NDArray:
-    """Returns the non-stationary autocorrelation matrix for a 1-D signal.
+    """Returns the non-stationary autocovariance for a 1-D signal.
 
-    The autocorrelation for a non-stationary signal is:
+    The autocovariance for a non-stationary signal is:
 
         ACF = x^(t - l) * x(t + l)
 
@@ -39,16 +39,11 @@ def autocorrelation(
             time-frequency distributions.
 
     Returns:
-        A 2-D array of autocorrelation values with signal delay along the 0th
+        A 2-D array of autocovariance values with signal delay along the 0th
         axis and time along the 1st axis.
 
-    References:
-        1. Najmi, A. H. "The Wigner distribution: A time-frequency analysis
-           tool." Johns Hopkins APL Technical Digest 15 (1994): 298-298.
-        2. https://en.wikipedia.org/wiki/Autocorrelation
-
     Notes:
-        We compute the autocorrelation using Toeplitz matrices that hold both
+        We compute the autocovariance using Toeplitz matrices that hold both
         the forward and reverse signal copies. Consider this signal [7,4,6].
         Its lag can range from -3 to +3. Here are the reversed & forward
         delayed signals.
@@ -65,6 +60,11 @@ def autocorrelation(
         Notice non-zero products occur at delays = {-1,0,1} and the Reversed and
         Forward signals are a Toeplitz and a flipped Toeplitz matrix
         respectively.
+
+    References:
+        1. Najmi, A. H. "The Wigner distribution: A time-frequency analysis
+           tool." Johns Hopkins APL Technical Digest 15 (1994): 298-298.
+        2. https://en.wikipedia.org/wiki/Autocorrelation
     """
 
     x = np.array(signal)
@@ -111,7 +111,10 @@ def ambiguity(signal: npt.NDArray, fs: float, **kwargs) -> npt.NDArray:
         A 3-tuple consisting of:
         (1) An ambiguity  matrix with doppler delays (taus) along axis=0 and
         frequency shifts (etas) along axis=1.
-        (2) A 1-D array of doppler delays in [-len(signal), len(signal)]
+        (2) A 1-D array of doppler delays. For even-lengthend signals these
+        delays will be in [-2l/fs,...2l/fs] where l < len(signal) // 2 - 1. For odd
+        lengthend signals these delays will be in [-2l/fs,...2l/fs] where
+        l < len(signal) // 2.
         (3) A 1-D array of len(signal) + 1 doppler frequencies. The order of these
         frequencies is given by numpy.fft.fftfreq. Numpy's fft shift can be used
         to center these frequencies and the ambiguity matrix about the zero
@@ -123,8 +126,8 @@ def ambiguity(signal: npt.NDArray, fs: float, **kwargs) -> npt.NDArray:
     """
 
     # compute autocorrelation and ambiguity
-    auto_corr = autocorrelation(signal, **kwargs)
-    amb = np.fft.ifft(auto_corr, axis=1)
+    autocov = autocovariance(signal, **kwargs)
+    amb = np.fft.ifft(autocov, axis=1)
 
     # compute doppler shifts and lags (eta and tau respectively)
     etas = np.fft.fftfreq(len(signal), d=1/fs)
@@ -139,18 +142,64 @@ def wigner(
         fs: float,
         detrend: bool = True,
         analytic: bool = True,
-        kernel: Optional[Callable[..., npt.NDArray] = None,
+        kernel: Optional[Callable[..., npt.NDArray]] = None,
     ) -> npt.NDArray:
-    """ """
+    """The Wigner distribution function, a representation of instantaneous
+    spectral density over time and frequencies suitable for non-stationary
+    signal processing.
 
+    This transform provides the highest possible time-frequency resolved
+    spectral density of a signal achievable under the Uncertainty Principle.
+    This resolution comes at the cost of large cross-terms for multicomponent
+    signals. These cross-terms can be mitigated by an smoothing kernel.
+
+    Args:
+        signal:
+            A 1-D array real or complex signal.
+        fs:
+            The sampling rate in Hz at which signal was acquired.
+        detrend:
+            A boolean indicating if the signal should be detrended. If signal
+            has a non-zero mean it should be detrended. Defaults to True.
+        analytic:
+            A boolean indicating if the negative frequency components should be
+            removed. This prevents negative frequency aliasing in the
+            time-frequency distributions. Defaults to True.
+        kernel:
+            A callable usually representing a low-pass filter in the ambiguity
+            domain used to mask out interference terms. This extends the Wigner
+            distribution function to Cohen's class of Bilinear transformations.
+            For help in choosing a kernel please see phasor.kernels
+
+    Returns:
+        A 3-tuple consisting of:
+        (1) A 2-D array of spectral densities over times and frequencies with
+        frequencies along axis=0 and time along axis=1.
+        (2) A 1-D array of frequencies from [-fs/4...fs/4]
+        (3) A 1-D array of times from 0 to len(signal)/fs.
+
+    Notes:
+        Spectrograms usually run from -fs/2 to fs/2 but the WDF runs from -fs/4
+        to fs/4. This reduced frequency range results from having to increment
+        delays in the autocovariance by steps of two tau to have integer shifts
+        of the signal. This reduces the frequency range. Please see ambiguity
+        defn in Reference 1.
+
+    References:
+        Najmi, A. H. "The Wigner distribution: A time-frequency analysis tool."
+        Johns Hopkins APL Technical Digest 15 (1994): 298-298.
+
+    """
 
     if kernel:
         # TODO add kernel smoothed calculation
-        amb, *_ = ambiguity(signal, fs, detrend=detrend, analytic=analytic)
-        result = 2 * np.fft.fft2(amb)
+        amb, taus, etas = ambiguity(signal, fs, detrend=detrend, analytic=analytic)
+        smoother = kernel(etas, taus)
+        result = 2 * np.fft.fft2(smoother * amb)
     else:
-        auto_corr = autocorrelation(signal, detrend, analytic)
-        result = np.fft.fft(auto_corr, axis=0)
+        # bypass ambiguity when no smoothing kernel
+        autocov = autocovariance(signal, detrend, analytic)
+        result = np.fft.fft(autocov, axis=0)
 
     times = np.arange(0, len(signal)/fs, 1/fs)
     freqs = 1/2 * np.fft.fftfreq(result.shape[0], d=1/fs)
@@ -162,6 +211,14 @@ def wigner(
     return result, freqs, times
 
 
+def choi_williams(etas, taus, sigma):
+    """ """
+
+    cols, rows = np.meshgrid(etas, taus)
+    return np.exp(-(cols**2 * rows**2) / sigma)
+
+
+
 
 
 if __name__ == '__main__':
@@ -169,6 +226,9 @@ if __name__ == '__main__':
     import time
     import matplotlib.pyplot as plt
     from phasor.data.synthetic import PACSignal
+
+    from functools import partial
+
 
     """
     duration = 10
@@ -200,41 +260,47 @@ if __name__ == '__main__':
     fs = 32
     duration = 12
     time = np.linspace(0, duration, duration*fs + 1)
-    #signal = np.sin(2*np.pi*4.5*time) + np.sin(2*np.pi*9*time)
-    signal = np.sin(2*np.pi*12*time)
+    #signal = np.sin(2*np.pi*4.5*time)
+    signal = np.sin(2 * np.pi * 4.5 * time) + np.sin(2 * np.pi * 9 * time)
     signal[:6*fs] = 0
     signal[10*fs:] = 0
-    #signal += np.random.random(fs*duration+1) * 0.25
-    amb, taus, etas = ambiguity(signal, fs, analytic=False)
+    signal += np.random.random(fs*duration+1) * 0.25
+    amb, taus, etas = ambiguity(signal, fs, analytic=True)
 
+    kernel = choi_williams(etas, taus, sigma=0.01)
+    
     # for plotting fftshift amb and etas
-    amb = np.fft.ifftshift(amb, axes=1)
-    etas = np.fft.ifftshift(etas)
+    amb = np.fft.fftshift(amb, axes=1)
+    etas = np.fft.fftshift(etas)
+    kern = np.fft.fftshift(kernel, axes=1)
 
-    fig, ax = plt.subplots()
-    ax.pcolormesh(etas, taus, np.abs(amb), shading='nearest')
+    
+    fig, axarr = plt.subplots(1,2)
+    axarr[0].pcolormesh(etas, taus, np.abs(amb), shading='nearest')
+    axarr[1].pcolormesh(etas, taus, kern)
     plt.show()
     """
 
-
     #wigner tests
-    fs = 128
+    fs = 64
     duration = 12
     times = np.linspace(0, duration, duration*fs + 1)
     #time = np.arange(0, 5, 1/fs)
-    signal = 2*np.sin(2*np.pi*4.5*times) + 2*np.sin(2*np.pi*18*times)
+    signal = 2*np.sin(2*np.pi*4.5*times) + 2*np.sin(2*np.pi*9*times)
     #signal = np.sin(2*np.pi*4.5*times)
     signal[:6*fs] = 0
     signal[10*fs:] = 0
     signal += np.random.random(fs*duration+1) * 0.25
     t0 = time.perf_counter()
-    w, freqs, t = wigner(signal, fs=fs, analytic=True, kernel=None)
+    kernel =  partial(choi_williams, sigma=1)
+    w, freqs, t = wigner(signal, fs=fs, analytic=True, kernel=kernel)
     wig = np.abs(w)
     print(f'Computed Wigner in {time.perf_counter() - t0} secs')
 
     # FIXME need to restrict plots using nearest function to help
     fig, ax = plt.subplots()
     #ax.pcolormesh(t, freqs, np.abs(wig))
-    ax.pcolormesh(t, freqs, wig, shading='nearest')
+    pcm = ax.pcolormesh(t, freqs, wig, shading='nearest')
+    fig.colorbar(pcm, ax=ax)
     plt.show()
     
