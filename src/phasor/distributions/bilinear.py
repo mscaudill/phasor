@@ -2,24 +2,52 @@
 
 """
 
-from collections import abc
-from abc import abstractmethod
 from typing import Optional, Callable
 
 import numpy as np
 import numpy.typing as npt
 import matplotlib.pyplot as plt
 import scipy.signal as sps
-from scipy.linalg import hankel, toeplitz
+from scipy.linalg import toeplitz
 
 from phasor.core.arraytools import pad_axis_to
 
 
-class QTFD(abc.Callable):
-    """ """
+class Bilinear:
+    """Cohen's class of Bilinear Time Frequency Distributions.
+
+    Bilinear TFDs represent the energy density of a signal simulataneously in
+    time and frequency. Unlike short-time Fourier transforms and Wavelets, these
+    joint distributions provide high uniform resolution across both time and
+    frequency for non-stationary signal analysis. In particular, they are
+    well-suited for computing energy fractions over small time/frequency ranges,
+    computing freqeuncy distributions at specific time instantances, or moments
+    of the distribution.
+
+    Each of Cohen's TFDs are distinguished by a kernel choice. These kernels are
+    used to reduce interference terms arising from the instantaneous
+    auto-correlation (see References). The default kernel is the Choi-Williams
+    kernel. Specific TFDS may be constructed by inheriting this class and
+    overridding the kernel choice (see Wigner, Rihaczek etc.).
+
+    References:
+
+        1. L. Cohen, "Time-frequency distributions-a review," in Proceedings of
+           the IEEE, vol. 77, no. 7, pp. 941-981, July 1989, doi:
+           10.1109/5.30749.
+        2. Najmi, A. H. "The Wigner distribution: A time-frequency analysis
+           tool." Johns Hopkins APL Technical Digest 15 (1994): 298-298.
+        3. Cohen, L. (1995) Time-Frequency Analysis. Prentice-Hall Signal Processing
+        4. H. . -I. Choi and W. J. Williams, "Improved time-frequency
+           representation of multicomponent signals using exponential kernels,"
+           in IEEE Transactions on Acoustics, Speech, and Signal Processing,
+           vol. 37, no. 6, pp. 862-871, June 1989, doi: 10.1109/ASSP.1989.28057.
+        5. R. M. Fano, “Short-timeautocorrelation functions and power
+           spectra,” J. Acoust. Soc. Am., vol. 22, pp. 546-550, 1950.
+    """
 
     def __init__(self, detrend=True, analytic=True) -> None:
-        """Initialize this Cohen's Quadratic Time Frequency distribution.
+        """Initialize this bilinear TFD.
 
         Args:
             detrend:
@@ -34,31 +62,53 @@ class QTFD(abc.Callable):
         self.detrend = detrend
         self.analytic = analytic
 
-    def _autocorrelation(
-            self,
-            signal: npt.NDArray,
-    )-> npt.NDArray:
-        """Returns the time-dependent autocorrelation (ACF) for a 1-D signal.
+    def domain(self, signal, fs):
+        """Returns the doppler frequencies & lags of the ambiguity domain.
 
-        Following reference 2, the time-dependent ACF is defined as:
+        The ambiguity function transforms the instantaneous autocorrelation from
+        a function of time and delay to a function of doppler frequency shifts
+        (here called etas) and doppler lags (here called taus). This function
+        returns these ambiguity domain vectors.
 
-            ACF = x^(t - l) * x(t + l)
+        Args:
+            signal:
+                A 1-D numpy array of signal values in time.
+            fs:
+                The sampling rate of the signal in Hz.
+
+        Returns:
+            A 2-tuple of 1-D arrays of doppler frequencies and lags.
+        """
+
+        etas = np.fft.fftfreq(len(signal), d=1/fs)
+        # max_shift depends on even/odd signal length
+        max_shift = int(np.ceil(len(signal) / 2) - 1)
+        taus = 2 * np.arange(-max_shift, max_shift+1) / fs
+
+        return etas, taus
+
+    def _autocorrelation(self, signal: npt.NDArray) -> npt.NDArray:
+        """Returns the instantaneous autocorrelation (AC) for a 1-D signal.
+
+        Following reference 2, the time-dependent AC is defined as:
+
+            AC = x^(t - l) * x(t + l)
 
         where x is the signal, ^ denotes complex conjugation & l is an integer
         lag (i.e. the shift amounti). It is a function of both time and lag.
-        Note the lag is 1/2 the delay in in the ACF definintion (see Reference
+        Note the lag is 1/2 the delay in in the AC definintion (see Reference
         1, 3).
 
         Args:
             signal:
-                A 1-D numpy array whose ACF is to be measured.
+                A 1-D numpy array whose AC is to be measured.
 
         Returns:
             A 2-D array of autocorrelation values with signal delay along
             the 0th axis and time along the 1st axis.
 
         Notes:
-            We compute the autocovariance using Toeplitz matrices that hold both
+            We compute the autocorrelation using Toeplitz matrices that hold both
             the forward and reverse signal copies. Consider this signal [7,4,6].
             Its lag can range from -3 to +3. Here are the reversed & forward
             delayed signals.
@@ -87,10 +137,6 @@ class QTFD(abc.Callable):
         """
 
         x = np.array(signal)
-        if x.ndim != 1:
-            msg = 'data must be exactly 1-D.'
-            raise ValueError(msg)
-
         if self.detrend:
             x -= np.mean(x)
 
@@ -99,7 +145,7 @@ class QTFD(abc.Callable):
 
         # Construct Toeplitz
         # max_shift depends on even/odd signal length
-        max_shift = len(x) // 2 if len(x) % 2 else len(x) // 2 - 1
+        max_shift = int(np.ceil(len(signal) / 2) - 1)
         first_col = pad_axis_to(x[max_shift::-1], 2 * max_shift + 1, side='right')
         first_row = pad_axis_to(x[max_shift:], len(x), side='right')
         reverse = toeplitz(first_col, first_row)
@@ -143,19 +189,31 @@ class QTFD(abc.Callable):
 
         # compute autocorrelation and ambiguity
         autocorr = self._autocorrelation(signal)
-        amb = np.fft.ifft(autocorr, axis=1)
+        return  np.fft.ifft(autocorr, axis=1)
 
-        # compute doppler shifts and lags (eta and tau respectively)
-        etas = np.fft.fftfreq(len(signal), d=1/fs)
-        # taus are 2X the integer shifts in ambiguity defn.
-        max_shift = (amb.shape[0] - 1) // 2
-        taus = 2 * np.arange(-max_shift, max_shift+1) / fs
-        return amb, taus, etas
+    def kernel(self, signal, fs, width):
+        """ """
 
-    @abstractmethod
-    def __call__(self, signal, fs, kernel, *args, **kwargs):
+        etas, taus = self.domain(signal, fs)
+        cols, rows = np.meshgrid(etas, taus)
+        return np.exp(-(cols**2 * rows**2) / width)
+
+    def __call__(self, signal, fs, **kwargs):
         """Returns a tuple containing a specific time-frequency distribution,
         time vector and frequency vector."""
+
+        amb = self.ambiguity(signal, fs)
+        k = self.kernel(signal, fs, **kwargs)
+        result = 2 * np.fft.fft2(k * amb)
+
+        times = np.arange(0, len(signal)/fs, 1/fs)
+        freqs = 1/2 * np.fft.fftfreq(result.shape[0], d=1/fs)
+
+        # place 0 frequency at center
+        result = np.fft.fftshift(result, axes=0)
+        freqs = np.fft.fftshift(freqs)
+
+        return result, freqs, times
 
     def plot(self, tfd, freqs, time):
         """ """
@@ -166,20 +224,14 @@ class QTFD(abc.Callable):
         plt.show()
 
 
-class Wigner(QTFD):
+class Wigner(Bilinear):
     """ """
 
-    def __call__(self, signal, fs, kernel=None, *args, **kwargs):
+    def __call__(self, signal, fs):
         """ """
 
-        if np.any(kernel):
-            amb, taus, etas = self.ambiguity(signal, fs=fs)
-            #smoother = kernel(etas, taus)
-            result = 2 * np.fft.fft2(kernel * amb)
-        else:
-            # bypass ambiguity when no smoothing kernel
-            autocorr = self._autocorrelation(signal)
-            result = np.fft.fft(autocorr, axis=0)
+        autocorr = self._autocorrelation(signal)
+        result = np.fft.fft(autocorr, axis=0)
 
         times = np.arange(0, len(signal)/fs, 1/fs)
         freqs = 1/2 * np.fft.fftfreq(result.shape[0], d=1/fs)
@@ -191,6 +243,20 @@ class Wigner(QTFD):
         return result, freqs, times
 
 
+class Rihaczek(Bilinear):
+    """ """
+
+    # This version should technically have a kernel of 1
+    def __call__(self):
+        pass
+
+
+class SmoothRihaczek(Bilinear):
+    """ """
+
+    pass
+
+
 if __name__ == '__main__':
 
 
@@ -198,25 +264,19 @@ if __name__ == '__main__':
 
     msine = MultiSine(
                 amps=[1,1,1],
-                freqs=[4.5, 9, 12],
+                freqs=[11, 9, 12],
                 times=[[6, 10], [6, 10], [2,5]])
     time, signal = msine(duration=12, fs=128, sigma=0.01, seed=None)
 
-    def choi_williams(etas, taus, sigma):
-        """ """
-
-        cols, rows = np.meshgrid(etas, taus)
-        return np.exp(-(cols**2 * rows**2) / sigma)
-
-    # FIXME
-    # the design has problems, we have to call ambiguity 2x here just to get the
-    # ambiguity plane variables eta and tau for constructing our CW kernel!
-    # the kernel passed to call was changed from a callable to a matrix!
+    """
     wigner = Wigner()
-    amb, taus, etas = wigner.ambiguity(signal, fs=128)
-    kernel = choi_williams(etas, taus, sigma=0.1)
-    tfd, freqs, times = wigner(signal, fs=128, kernel=kernel)
+    tfd, freqs, times = wigner(signal, fs=128)
 
     wigner.plot(tfd, freqs, times)
+    """
+
+    bilinear = Bilinear()
+    tfd, freqs, times = bilinear(signal, fs=128, width=0.1)
+    bilinear.plot(tfd, freqs, times)
 
 
