@@ -124,7 +124,7 @@ class MultiSine(Signal):
         signal = np.zeros(duration * fs + 1)
         times = np.linspace(0, duration, duration * fs + 1)
         for amp, freq, (a, b) in zip(self.amps, self.freqs, self.times):
-            signal[a * fs: b * fs] += np.sin(
+            signal[int(a * fs): int(b * fs)] += np.sin(
                     2 * np.pi * freq * np.arange(b-a, step=1/fs)
                     )
 
