@@ -80,7 +80,7 @@ push = true
     'current_version = "{version}"',
     'version = "{version}"'
 ]
-"src/deepseize/__init__.py" = ['__version__ = "{version}"']
+"src/phasor/__init__.py" = ['__version__ = "{version}"']
 
 # mypy configuration
 [tool.mypy]
@@ -92,6 +92,9 @@ warn_unused_configs = true
 # 3rd party's without annotations
 module = ["scipy.*", "matplotlib.*", "openseize.*"]
 ignore_missing_imports = true
+
+[tool.setuptools.package-data]
+phasor = ["py.typed"]
 
 # pylint configuration
 [tool.pylint.design]
@@ -106,3 +109,7 @@ attr-naming-style = "any"
 [tool.isort]
 profile = 'google'
 line_length = 80
+
+[tool.black]
+line-length = 80
+skip-string-normalization = 1
