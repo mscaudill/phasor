@@ -1,14 +1,43 @@
+"""A collection of callables for masking the doppler-lag domain of the ambiguity
+function.
+
+For multicomponent signals, the ambiguity function in the integrand of Cohen's
+bilinear time-frequency distribution definition will create cross-term
+interferences for real signals. Kernels that mask the doppler-lag domain of
+the ambiguity function can be used to reduce the contributions of this
+cross-term interference. The kernel choice will determine whether the resulting
+density is real and provide different trade-offs of frequency and time
+resolution. These details are explored in the documentation for each kernel
+defined in this module.
 """
 
-"""
+from typing import Protocol
 
 import numpy as np
 import numpy.typing as npt
 
 
-def unitary(etas: npt.NDArray, taus:npt.NDArray) -> npt.NDArray:
+# Protocols may have no public methods
+# pylint: disable-next=too-few-public-methods
+class Kernel(Protocol):
+    """A Protocol defining the expected signature of all kernel callables."""
+
+    def __call__(
+        self,
+        etas: npt.NDArray,
+        taus: npt.NDArray,
+        **kwargs,
+    ) -> npt.NDArray:
+        """All kernel callables must accept the ambiguity domain variables etas
+        and taus and any required kwargs."""
+
+
+def unitary(etas: npt.NDArray, taus: npt.NDArray) -> npt.NDArray:
     """Returns a kernel whose value is 1 at all eta, tau points in the ambiguity
     plane.
+
+    This kernel is equivalent to no kernel and will result in the Wigner
+    distribution function when substituted into Cohen's bilinear distribution.
 
     etas:
         A 1-D array of doppler frequencies.
@@ -23,9 +52,9 @@ def unitary(etas: npt.NDArray, taus:npt.NDArray) -> npt.NDArray:
 
 
 def choi_williams(
-        etas: npt.NDArray,
-        taus:npt.NDArray,
-        sigma: float,
+    etas: npt.NDArray,
+    taus: npt.NDArray,
+    sigma: float,
 ) -> npt.NDArray:
     """The Choi-Williams kernel for cross-term interference reduction.
 
@@ -63,11 +92,14 @@ def choi_williams(
 
 
 def rihaczek(etas: npt.NDArray, taus: npt.NDArray) -> npt.NDArray:
-    """Returns the Rihaczek kernel over the ambiguity coordinates etas and taus.
+    """Returns the complex Rihaczek kernel over the ambiguity coordinates etas
+    and taus.
 
-    The substition of this kernel into Cohen's definition of a bilinear
+    The substitution of this kernel into Cohen's definition of a bilinear
     time-frequency distribution (see phasor.distributions.bilinear) results in
-    the complex Rihaczek distribution.
+    the complex Rihaczek distribution. It does not reduce cross-term
+    interference but returns a complex energy distribution from which phase
+    information can be extracted.
 
     Args:
         etas:

@@ -1,17 +1,11 @@
 """A class for building any of Cohen's bilinear time-frequency distributions.
 
-Bilinear TFDs represent the energy density of a signal simulataneously in time
+Bilinear TFDs represent the energy density of a signal simultaneously in time
 & frequency. Unlike short-time Fourier transforms and wavelets, these joint
 distributions provide high uniform resolution across both time and frequency for
 non-stationary signal analysis. In particular, they are well-suited for
-computing energy fractions over small time & frequency ranges, computing
-freqeuncy distributions at specific time instantances, or moments of the
-distribution.
-
-$$
-    P(f, t) \equiv \int\int A(\nu, \tau)K(\nu, \tau)e^{-i \nu t}e^{-i \omega
-    \tau} d\nu d\tau
-$$
+computing energy fractions over small time & frequency ranges, frequency
+distributions at specific time instantances, or moments of the distribution.
 
 Classes:
     Bilinear:
@@ -22,13 +16,13 @@ Classes:
 """
 
 from functools import partial
-from typing import Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-import matplotlib.pyplot as plt
-import scipy.signal as sps
 from scipy.linalg import toeplitz
+import scipy.signal as sps
 
 from phasor.core.arraytools import pad_axis_to
 from phasor.distributions import kernels
@@ -40,8 +34,8 @@ class Bilinear:
     Each of Cohen's TFDs are distinguished by a kernel choice. These kernels are
     used to reduce interference terms arising from the instantaneous
     auto-correlation (see References). The default is to use a unity kernel.
-    This choice yields the famous Wigner distribution that will contain
-    cross-term interference for multicomponent signals.
+    This choice yields the Wigner distribution that will contain cross-term
+    interference for multicomponent signals.
 
     Examples:
     >>> # build a signal containing noisy sine waves
@@ -59,12 +53,11 @@ class Bilinear:
     Time resolution = 0.0078125
     >>> print(np.ceil(max(freqs)))
     32.0
-    >>> # expected frequency resolution is 128/2 / NFFT=1537
+    >>> # expected frequency resolution is Nyquist / NFFT = 64/1537
     >>> print(f'Frequency resolution = {np.round(np.abs(freqs[1] - freqs[0]), 6)}')
     Frequency resolution = 0.04164
 
     References:
-
         1. L. Cohen, "Time-frequency distributions-a review," in Proceedings of
            the IEEE, vol. 77, no. 7, pp. 941-981, July 1989, doi:
            10.1109/5.30749.
@@ -94,12 +87,14 @@ class Bilinear:
 
         self.detrend = detrend
         self.analytic = analytic
-        self.kernels = []
+        self.kernels: List[kernels.Kernel] = []
+        # initialize with a unitary kernel
+        self.add_kernel(partial(kernels.unitary))
 
     def domain(
-            self,
-            signal: npt.NDArray,
-            fs: float,
+        self,
+        signal: npt.NDArray,
+        fs: float,
     ) -> Tuple[npt.NDArray, npt.NDArray]:
         """Returns the doppler frequencies & lag coordinates of the ambiguity
         domain.
@@ -123,10 +118,10 @@ class Bilinear:
             & for even-lengthed signals abs(l) < len(signal) // 2.
         """
 
-        etas = np.fft.fftfreq(len(signal), d=1/fs)
+        etas = np.fft.fftfreq(len(signal), d=1 / fs)
         # max_shift depends on even/odd signal length
         max_shift = int(np.ceil(len(signal) / 2) - 1)
-        taus = 2 * np.arange(-max_shift, max_shift+1) / fs
+        taus = 2 * np.arange(-max_shift, max_shift + 1) / fs
 
         return etas, taus
 
@@ -136,6 +131,8 @@ class Bilinear:
         Kernel functions are key to building useful time-frequency distributions
         as they mask the doppler-lag domain of the ambiguity function. They are
         useful in attenuating cross-term interference of multicomponent signals.
+        Multiple kernels may be added to this instance. The final kernel will be
+        a product of all supplied kernels.
 
         Args:
             kernel:
@@ -151,7 +148,8 @@ class Bilinear:
         """
 
         # pop etas and taus if client passed them
-        [kwargs.pop(x, None) for x in {'etas', 'taus'}]
+        # pylint: disable-next=expression-not-assigned
+        [kwargs.pop(x, None) for x in ("etas", "taus")]
         func = partial(kernel, **kwargs)
         self.kernels.append(func)
 
@@ -164,7 +162,7 @@ class Bilinear:
 
         where x is the signal, ^ denotes complex conjugation & l is an integer
         shift of the signal. The AC is a function of both time & shift.  Note
-        the shift is 1/2 the delay in in the AC definintion (see Refs 2 & 3).
+        the shift is 1/2 the delay in in the AC definition (see Refs 2 & 3).
 
         Args:
             signal:
@@ -211,12 +209,13 @@ class Bilinear:
 
         # make Toeplitzes with max val of l depending on even/odd signal length
         max_l = int(np.ceil(len(signal) / 2) - 1)
-        first_col = pad_axis_to(x[max_l::-1], 2 * max_l + 1, side='right')
-        first_row = pad_axis_to(x[max_l:], len(x), side='right')
+        first_col = pad_axis_to(x[max_l::-1], 2 * max_l + 1, side="right")
+        first_row = pad_axis_to(x[max_l:], len(x), side="right")
         reverse = toeplitz(first_col, first_row)
         forward = np.flip(reverse, axis=0)
 
-        return np.conjugate(reverse) * forward
+        result: npt.NDArray = np.conjugate(reverse) * forward
+        return result
 
     def ambiguity(self, signal: npt.NDArray) -> npt.NDArray:
         """Returns the 2-D ambiguity matrix of a 1-D data array.
@@ -244,13 +243,13 @@ class Bilinear:
 
         # compute autocorrelation and ambiguity
         autocorr = self._autocorrelation(signal)
-        return  np.fft.ifft(autocorr, axis=1)
+        return np.fft.ifft(autocorr, axis=1)
 
     def __call__(
-            self,
-            signal: npt.NDArray,
-            fs: float,
-            **kwargs
+        self,
+        signal: npt.NDArray,
+        fs: float,
+        **kwargs,
     ) -> Tuple[npt.NDArray, npt.NDArray, npt.NDArray]:
         """Returns the energy density distribution & time-frequency coordinates.
 
@@ -287,7 +286,9 @@ class Bilinear:
 
         # build a kernel matrix over the ambiguity domain
         etas, taus = self.domain(signal, fs)
-        kernel = np.prod(np.stack([k(etas, taus) for k in self.kernels]), axis=0)
+        kernel = np.prod(
+            np.stack([k(etas, taus) for k in self.kernels]), axis=0
+        )
 
         # if unity kernel (i.e. Wigner TFD) use faster single fft
         if np.any(kernel - 1):
@@ -297,8 +298,8 @@ class Bilinear:
             autocorr = self._autocorrelation(signal)
             result = np.fft.fft(autocorr, axis=0)
 
-        times = np.arange(0, len(signal)/fs, 1/fs)
-        freqs = 1/2 * np.fft.fftfreq(result.shape[0], d=1/fs)
+        times = np.arange(0, len(signal) / fs, 1 / fs)
+        freqs = 1 / 2 * np.fft.fftfreq(result.shape[0], d=1 / fs)
 
         # place 0 frequency at center
         result = np.fft.fftshift(result, axes=0)
@@ -307,12 +308,13 @@ class Bilinear:
         return result, freqs, times
 
     def plot(
-            self,
-            tfd: npt.NDArray,
-            freqs: npt.NDArray,
-            time: npt.NDArray,
-            ax: Optional[plt.Axes] = None,
-    ) -> None:
+        self,
+        tfd: npt.NDArray,
+        freqs: npt.NDArray,
+        time: npt.NDArray,
+        positive: bool = True,
+        show: bool = True,
+    ) -> Optional[Tuple[plt.Figure, plt.Axes]]:
         """Plots the magnitude of a time-frequency distribution.
 
         tfd:
@@ -322,37 +324,48 @@ class Bilinear:
             A 1-D array of frequencies in Hz.
         time:
             A 1-D array of times in secs.
-        ax:
-            a matplotlib axis where this plot will be shown. If None a new axis
-            will be created.
+        positive:
+            A boolean indicating if only the positive frequencies should be
+            shown. Default is True.
+        show:
+            A boolean indicating if the figure should be shown (True) or the
+            figure and axis instance returned.
+
+        Returns:
+            A 2-Tuple with matplotlib Figure and Axes instances.
         """
 
+        slicer = slice(None)
+        if positive:
+            slicer = slice(len(freqs) // 2, None)
+
+        # get the data to plot
+        density = np.abs(tfd)[(slicer, slice(None))]
+        frequencies = freqs[slicer]
+
         fig, ax = plt.subplots()
-        mesh = ax.pcolormesh(time, freqs, np.abs(tfd), shading='nearest')
+        mesh = ax.pcolormesh(time, frequencies, density, shading="nearest")
+        # configure plt
         fig.colorbar(mesh, ax=ax)
-        plt.show()
+        ax.set_xlabel("time (s)")
+        ax.set_ylabel("frequency (Hz)")
+        ax.set_title("Energy Density")
+
+        if show:
+            plt.show()
+        return fig, ax
 
 
-if __name__ == '__main__':
-
-
+if __name__ == "__main__":
     from phasor.data.synthetic import MultiSine
-    from phasor.distributions import kernels
 
-    from functools import partial
-
-    msine = MultiSine(
-                amps=[1,1],
-                freqs=[9, 11],
-                times=[[5.5, 9.5], [6, 10]])
+    msine = MultiSine(amps=[1, 1], freqs=[9, 11], times=[[5.5, 9.5], [6, 10]])
     time, signal = msine(duration=12, fs=128, sigma=0.01, seed=None)
 
-    
     wigner = Bilinear()
-    #wigner.add_kernel(kernels.choi_williams, sigma=0.1)
+    # wigner.add_kernel(kernels.choi_williams, sigma=0.1)
     tfd, freqs, times = wigner(signal, fs=128)
-    wigner.plot(tfd, freqs, times)
-    
+    wigner.plot(tfd, freqs, times, positive=True)
 
     """
     bilinear = Bilinear()
@@ -370,4 +383,3 @@ if __name__ == '__main__':
     tfd, freqs, times = rihaczek(signal, fs=128, width=0.1)
     rihaczek.plot(tfd, freqs, times)
     """
-
