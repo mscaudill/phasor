@@ -362,8 +362,8 @@ if __name__ == "__main__":
     msine = MultiSine(amps=[1, 1], freqs=[9, 11], times=[[5.5, 9.5], [6, 10]])
     time, signal = msine(duration=12, fs=128, sigma=0.01, seed=None)
 
-    wigner = Bilinear()
-    # wigner.add_kernel(kernels.choi_williams, sigma=0.1)
+    wigner = Bilinear(analytic=True)
+    #wigner.add_kernel(kernels.choi_williams, sigma=0.1)
     tfd, freqs, times = wigner(signal, fs=128)
     wigner.plot(tfd, freqs, times, positive=True)
 
