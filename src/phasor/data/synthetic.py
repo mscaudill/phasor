@@ -250,7 +250,7 @@ class PAC(Signal):
         self.amp_a = amp_a
         self.strength = strength
 
-    def modulated(self, time):
+    def modulated(self, time, shift):
         """Returns the amplitude modulated component of the signal over a vector
         of times.
 
@@ -258,14 +258,19 @@ class PAC(Signal):
             time:
                 A 1-D vector of times over which this component will be
                 computed.
+            shift:
+                The phase shift relative to the modulating phase at which the
+                amplitude of this modulated signal is maximal.
 
         Returns:
             A 1-D array of the same length as time.
         """
 
         chi = 1 - self.strength
-        mod = ((1- chi) * np.sin(2 * np.pi * self.fp * time) + 1 + chi) / 2
-        return self.amp_a * mod * np.sin(2 * np.pi * self.fp * time)
+        phi = shift / 180 * np.pi
+        modulation = ((1- chi) * np.sin(2 * np.pi * self.fp * time - phi)
+                      + 1 + chi) / 2
+        return self.amp_a * modulation * np.sin(2 * np.pi * self.fa * time)
 
     def phasic(self, time):
         """Returns the phase modulating component of this signal.
@@ -281,7 +286,7 @@ class PAC(Signal):
 
         return self.amp_p * np.sin(2 * np.pi * self.fp * time)
 
-    def __call__(self, duration, fs, sigma=None, seed=None):
+    def __call__(self, duration, fs, shift=0, sigma=None, seed=None):
         """Returns a 1-D array of times and a 1-D array of PAC signal values.
 
         Args:
@@ -289,6 +294,9 @@ class PAC(Signal):
                 The duration of the signal to create in seconds.
             fs:
                 The sampling rate of the signal to create in Hz.
+            shift:
+                The phase relative to the modulating phase at which the
+                carrier signal is maximal.
             sigma:
                 The standard deviation of additive noise to this signal.
             seed:
@@ -299,9 +307,11 @@ class PAC(Signal):
             A 2-tuple of 1-D arrays, the times array and the PACSignal array.
         """
 
-        time = np.linspace(0, duration, duration * fs + 1)
-        noise = self.noise(duration * fs + 1, sigma, seed) if sigma else 0
-        return time, self.modulated(time) + self.phasic(time) + noise
+        #time = np.linspace(0, duration, duration * fs + 1)
+        time = np.arange(0, duration, 1/fs)
+        #noise = self.noise(duration * fs + 1, sigma, seed) if sigma else 0
+        noise = self.noise(len(time), sigma, seed) if sigma else 0
+        return time, self.modulated(time, shift) + self.phasic(time) + noise
 
 
 
@@ -312,10 +322,10 @@ class PAC(Signal):
 if __name__ == '__main__':
 
 
-    """
-    pac = PAC(fp=8, fa=40, amp_p=0.5, amp_a=1, strength=0.6)
-    time, signal = pac(1, fs=500, sigma=0.1)
-    """
+
+    pac = PAC(fp=8, fa=40, amp_p=1, amp_a=.1, strength=0.8)
+    time, signal = pac(1, fs=500, sigma=0.25)
+
 
     """
     msine = MultiSine(amps=[1,1,1], freqs=[4.5, 9, 12], times=[[6, 10], [6, 10],
@@ -323,8 +333,10 @@ if __name__ == '__main__':
     time, signal = msine(duration=12, fs=128, sigma=0.01, seed=None)
     """
 
+    """
     chirp = LinearChirp(amp=1, start=2, stop=6, f_range=(2,20))
     time, signal = chirp(duration=12, fs=128, sigma=.05, seed=0)
+    """
 
     import matplotlib.pyplot as plt
     plt.plot(time, signal)
