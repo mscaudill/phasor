@@ -1,6 +1,7 @@
 """A collection of functions used to compute numerical results in Phasor."""
 
 import itertools
+from typing import List
 
 import numpy as np
 import numpy.typing as npt
@@ -79,7 +80,7 @@ def phases(analytic, deg=True):
 def density(
         x: npt.NDArray,
         y: npt.NDArray,
-        extrema: List[float, float],
+        extrema: List[float],
         binsize: int,
     ) -> npt.NDArray:
     """Estimates the distribution of bin averaged y-values over binned x-values.
@@ -120,7 +121,7 @@ def density(
     spread = extrema[1] - extrema[0]
     if np.mod(spread, binsize):
         msg = '{} units between {} is not divisible by a binsize of {}'
-        raise ValueError(msg.format(spread, extrema, binsize)
+        raise ValueError(msg.format(spread, extrema, binsize))
 
     nbins = spread // binsize + 1
     bins = np.linspace(*extrema, num=nbins)
