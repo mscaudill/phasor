@@ -2,54 +2,93 @@
 
 """
 
-import warnings
-
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 
+from phasor.coupling.bases import PAC
+from phasor.core import numerical
+
+# FIXME
+# 3. Part of this API should consider statistical test such as trial or block
+#    swapping???? 
 
 
+class ModulationIndex(PAC):
+    """A phase-amplitude coupling measure based on the distance between the
+    observed phase-amplitude distribution and a uniform distribution.
 
+    This is the method of Tort et. al. 2010. It constructs an observed
+    phase-amplitude distribution by binning the phases and computing the average
+    amplitude within each phase bin. This observed distribution is then compared
+    using the Kullback-Leibler divergence to a uniform distribution. Larger
+    values indicate more "suprise" when using the Uniform as a model for the
+    observed distribution.
 
-class ModulationIndex:
-    """ """
+    References:
+        1. Tort AB, Komorowski R, Eichenbaum H, Kopell N. Measuring
+           phase-amplitude coupling between neuronal oscillations of different
+           frequencies. J Neurophysiol. 2010 Aug; 104(2):1195-210. doi:
+           10.1152/jn.00106.2010.
+    """
 
-    def __init__(self, binsize):
+    def __init__(self, num_bins: int):
+        """Initialize this metric with a number of bins to partition the phases.
+
+        Args:
+            num_bins:
+                An integer number of bins to partition the phases into.
+
+        Returns:
+            None but stores the number of bins and an array of bins to this
+            instance.
+        """
+
+        self.num_bins = num_bins
+        self.binsize = 360 / self.num_bins
+        # bins are defined by their largest (i.e. rightmost) values
+        self.phase_bins = np.linspace(self.binsize, 360, self.num_bins)
+
+    def plot(self, ax=None, **kwargs):
+        """Constructs a phase-amplitude distribution plot from this instance's
+        denstity.
+
+        Args:
+            ax:
+                A matplotlib Axes instance to plot the binned phases and mean
+                amplitudes to. If None, a new figure is created.
+            kwargs:
+                Any valid kwarg for matplotlib's bar function.
+        """
+
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        # by default set width of bars binsize - 2 and align on left 
+        width = kwargs.pop('width', self.binsize-2)
+        align = kwargs.pop('align', 'edge')
+        # set the left bin edges and bar the densities
+        xs = np.arange(0, 360, self.binsize)
+        ax.bar(xs, self.densities, width=width, align=align, **kwargs)
+
+        return ax
+
+    def __call__(self, phases, amplitudes):
         """ """
 
-        self.binsize = binsize
-
-    def _density(self, phases, amplitudes, phase_unit='deg'):
-        """ """
-
-        if phase_unit.lower() == 'deg':
-            max_phase = 360
-        elif phase_unit.lower() == 'rad':
-            max_phase = 2 * np.pi
-        else:
-            raise ValueError("phase unit must be one of ['deg', 'rad']")
-
-        bins = np.arange(self.binsize, 360, self.binsize)
-        digitized = np.digitize(phases, bins=bins)
+        digitized = np.digitize(phases, bins=self.phase_bins)
 
         means = []
-        for phase_bin in range(len(bins)+1):
+        for bin_idx in range(self.num_bins):
 
-            locs = np.where(digitized == phase_bin)
+            locs = np.where(digitized == bin_idx)
             means.append(np.mean(amplitudes[locs]))
 
-        self.bins = bins
-        self.density = np.array(means) / np.sum(means)
+        self.densities = np.array(means) / np.sum(means)
 
-    def plot(self):
-        """ """
+        logN = np.log10(self.num_bins)
+        return (logN - numerical.shannon(self.densities)) / logN
 
-        width = self.bins[1]-self.bins[0] - 0.1
-        xs = np.arange(0, 360, self.binsize)
-        fig, ax = plt.subplots()
-        ax.bar(xs, self.density, width=self.binsize-2, align='edge')
-        ax.set_ylim([0, .1])
 
 
 if __name__ == '__main__':
@@ -62,7 +101,7 @@ if __name__ == '__main__':
     pac = PAC(fp=10, fa=50, amp_p=1.8, amp_a=1, strength=.8)
     # changing the duration from 3 to 2 creates openseize problem
     # FIXME !
-    time, signal = pac(3, fs=500, phi=90, sigma=0.1, seed=0)
+    time, signal = pac(3, fs=500, shift=90, sigma=0.1, seed=0)
 
     phase_kaiser = Kaiser(
                     fpass=[8, 12],
@@ -86,8 +125,8 @@ if __name__ == '__main__':
     phases = numerical.phases(x[0])
     amplitudes = numerical.envelopes(x[1])
 
-    mi = ModulationIndex(binsize=20)
-    mi._density(phases, amplitudes)
+    mi = ModulationIndex(num_bins=18)
+    result = mi(phases, amplitudes)
     
     #mi.plot()
     #plt.show()
