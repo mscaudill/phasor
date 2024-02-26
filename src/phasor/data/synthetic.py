@@ -268,7 +268,7 @@ class PAC(Signal):
 
         chi = 1 - self.strength
         phi = shift / 180 * np.pi
-        modulation = ((1- chi) * np.sin(2 * np.pi * self.fp * time - phi)
+        modulation = ((1- chi) * np.sin(2 * np.pi * self.fp * time - shift)
                       + 1 + chi) / 2
         return self.amp_a * modulation * np.sin(2 * np.pi * self.fa * time)
 
