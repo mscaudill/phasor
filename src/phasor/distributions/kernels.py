@@ -19,6 +19,8 @@ import numpy.typing as npt
 
 # Protocols may have no public methods
 # pylint: disable-next=too-few-public-methods
+# FIXME this does not enforce a function signature it merely defines that
+# kernels must be callables. This is not helpful
 class Kernel(Protocol):
     """A Protocol defining the expected signature of all kernel callables."""
 
