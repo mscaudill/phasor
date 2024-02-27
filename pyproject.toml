@@ -97,6 +97,9 @@ ignore_missing_imports = true
 phasor = ["py.typed"]
 
 # pylint configuration
+[tool.pylint]
+good-names="ax,m,n,p"
+
 [tool.pylint.design]
 max-attributes = 10
 max-args = 10
