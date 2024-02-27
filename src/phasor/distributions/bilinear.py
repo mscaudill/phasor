@@ -16,6 +16,7 @@ Classes:
 """
 
 from functools import partial
+import inspect
 from typing import Callable, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
@@ -125,7 +126,37 @@ class Bilinear:
 
         return etas, taus
 
-    def add_kernel(self, kernel, **kwargs):
+    def validate(self, kernel: kernels.Kernel) -> None:
+        """Validates that first two positional arguments of a kernel are the doppler
+        frequencies & lags named "etas" and "taus" respectively.
+
+        Kernel callables are expected to accept the doppler frequencies and lags
+        that define the ambiguity domain. Static type checkers and linters
+        should detect improperly signatured kernels but as a second line of
+        defense we assert at runtime that all kernels must start with two
+        positional args named "etas" and "taus".
+
+        Args:
+            kernel:
+                A callable whose signature will be validated.
+
+        Returns:
+            None
+
+        Raises:
+            A ValueError is issued if the supplied kernel's signature does not
+            start with the doppler frequency and lag postional arguments.
+        """
+
+        args = list(inspect.signature(kernel).parameters)
+        if args[:2] != ['etas', 'taus']:
+            msg = (
+                'The first two arguments of a kernel must be named'
+                '"etas" & "taus"'
+            )
+            raise ValueError(msg)
+
+    def add_kernel(self, kernel: kernels.Kernel, **kwargs):
         """Add a kernel to this time-frequency distribution.
 
         Kernel functions are key to building useful time-frequency distributions
@@ -147,6 +178,8 @@ class Bilinear:
             all parameters except the doppler-lag variables have been frozen.
         """
 
+        # validate the signature of this kernel
+        self.validate(kernel)
         # pop etas and taus if client passed them
         # pylint: disable-next=expression-not-assigned
         [kwargs.pop(x, None) for x in ("etas", "taus")]
@@ -363,7 +396,7 @@ if __name__ == "__main__":
     time, signal = msine(duration=12, fs=128, sigma=0.01, seed=None)
 
     wigner = Bilinear(analytic=True)
-    #wigner.add_kernel(kernels.choi_williams, sigma=0.1)
+    # wigner.add_kernel(kernels.choi_williams, sigma=0.1)
     tfd, freqs, times = wigner(signal, fs=128)
     wigner.plot(tfd, freqs, times, positive=True)
 
