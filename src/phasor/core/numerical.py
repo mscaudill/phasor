@@ -77,65 +77,6 @@ def phases(analytic, deg=True):
     return x
 
 
-def density(
-        x: npt.NDArray,
-        y: npt.NDArray,
-        extrema: List[float],
-        binsize: int,
-    ) -> npt.NDArray:
-    """Estimates the distribution of bin averaged y-values over binned x-values.
-
-    This probability density function estimate is created by:
-        1. binning x-values between extrema into nbins
-        2. collecting and averaging y-values for each bin i
-        3. returning P(i) = mean(y)_i / sum_i(mean(y)_i)
-
-    This is a generalized version of Tort 2010's method for estimating the
-    amplitude distribution over binned phase values. This method may be used to
-    build phase-amplitude, amplitude-amplitude, or phase-phase distribution
-    estimates.
-
-    Args:
-        x:
-            A 1-D array of inputs to be binned.
-        y:
-            A 1-D array of responses to signal x.
-        extrema:
-            The min and max value that x can take. These values need not be in x.
-        binsize:
-            The size of each bin used to partition the extrema range. The number
-            of bins will be computed as np.diff(extrema) / binsize + 1.
-
-    Returns:
-        A 1-D array of length nbins of density estimates.
-
-    Raises:
-        A ValueError is issued if the values in extrema are not divisible by the
-        binsize.
-
-    References:
-        Tort et. al. Measuring Phase-Amplitude Coupling between Neuronal
-        Oscillations of Different Frequencies. J. Neurophysiol. 104 1195-1210.
-    """
-
-    spread = extrema[1] - extrema[0]
-    if np.mod(spread, binsize):
-        msg = '{} units between {} is not divisible by a binsize of {}'
-        raise ValueError(msg.format(spread, extrema, binsize))
-
-    nbins = spread // binsize + 1
-    bins = np.linspace(*extrema, num=nbins)
-    digitized = np.digitize(phases, bins=bins)
-
-    means = []
-    for phase_bin, _ in enumerate(bins):
-
-        locs = np.where(digitized == phase_bin)
-        means.append(np.mean(amplitudes[locs]))
-
-    return np.array(means) / np.sum(means)
-
-
 def shannon(pdf: npt.NDArray, axis=-1, base=np.log10) -> npt.NDArray:
     """Returns the Shannon entropy of a discrete probability distribution.
 
