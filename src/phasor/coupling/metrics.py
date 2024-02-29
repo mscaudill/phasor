@@ -2,6 +2,7 @@
 
 """
 
+from collections import Counter
 from typing import Optional, Union
 
 import matplotlib.pyplot as plt
@@ -58,7 +59,6 @@ class ModulationIndex:
         self.phase_bins = np.linspace(self.binsize, 360, self.num_bins)
         self.densities = None
 
-    # ax is phasors standard naming convention for mpl Axes instances
     def plot(
         self,
         ax: Optional[plt.Axes] = None,
@@ -238,55 +238,98 @@ class VectorLength:
         return magnitude, angle
 
 
-class NMLocking:
-    """ """
+class PhaseLock:
+    """A phase-phase coupling metric that measures the conditional probability
+    of observing a phase 'phi' given another phase 'eta'.
 
-    def __init__(self, num_bins: int, n: int = 1, m: int = 1):
-        """Initialize this NMLocking metric with the number of bins & locking
-        integers.
+    This is the generalized n:m phase-locking measure of Tass et al. 1998. Given
+    two time series of phases, phi(t) and eta(t), The n:m = 1:1 condition, bins
+    the phases phi(t) and measures the mean vector length of exp(i * eta(n))
+    where n is the subset of t such that phi(n) lies within a particular bin. If
+    there is a complete dependence of the phases the mean vector length in a bin
+    will be 1 and if there is no phase dependence it will be 0.
 
-        Args:
-            num_bins:
-                An integer number of bins to partition the phases into.
-            n and m:
-                Integers that determine the phase locking condition. If
-                n = m = 1, the phases are locked at the same phase. If
-                n = 1 & m = 2, the phase of one signal is always twice the phase
-                of the other.
+    Attributes:
+        num_bins:
+            The number of bins used to partition the phases which are assumed to
+            be in degree units [0, 360].
+        binsize:
+            The size of each bin in degrees.
+        phase_bins:
+            A 1-D array of right-side bin edges in [binsize, 360].
+        magnitudes:
+            A 1-D array of length num_bins containing the mean magnitudes of the
+            complex vectors exp(i * eta(n)).This attribute is initialized
+            None and set to a 1-D array after this instance is called on a set
+            of phases.
 
-        Returns: None
+    References:
+        1. Tass P., Rosenblum M., Weule J., Kurths J., Pikovsky A., Volkmann J.
+           Detection of n:m phase locking from noisy data: application to
+           magnetoencephalography. Phys Rev Lett. 1998;81(15):3291–3294.
+    """
+
+    def __init__(self, num_bins: int):
+        """Initialize this PhaseLock metric with the number of bins.
+
+        Returns:
+            None
         """
 
         self.num_bins = num_bins
         self.binsize = 360 / self.num_bins
         # bins are defined by their largest (i.e. rightmost) values
         self.phase_bins = np.linspace(self.binsize, 360, self.num_bins)
+        self.magnitudes = None
 
-        self.n = n
-        self.m = m
-
-    def __call__(self, phases: npt.NDArray, others: npt.NDArray) -> float:
+    def plot(
+        self,
+        ax: Optional[plt.Axes] = None,
+        **kwargs,
+    ) -> Union[None, plt.Axes]:
         """ """
 
-        # include the n and m values here
+        if self.vectors is None:
+            return None
 
-        digitized = np.digitize(phases, bins=self.phase_bins)
+        if ax is None:
+            _, ax = plt.subplots(subplot_kw=dict(projection='polar'))
+            ax.grid(False)
 
-        rs = []
+        angles = np.angle(self.vectors)
+        heights = np.abs(self.vectors)
+        widths = 2 * np.pi / self.num_bins
+
+        ax.bar(x=self.phase_bins * np.pi/180, height=heights, width=widths, bottom=.1,
+        edgecolor='white')
+
+        """
+        for vec in self.vectors:
+            imag = np.imag(vec)
+            real = np.real(vec)
+            ax.arrow(0, 0, real, imag)
+        """
+
+    def __call__(
+        self,
+        phases: npt.NDArray,
+        others: npt.NDArray,
+        n: int = 1,
+        m: int = 1,
+        ) -> float:
+        """ """
+
+        x = np.mod(n * phases, 360)
+        y = np.mod(m * others, 360)
+        digitized = np.digitize(x, bins=self.phase_bins)
+
+        self.vectors = []
         for bin_idx in range(self.num_bins):
             locs = np.where(digitized == bin_idx)
-            r = np.exp(1j * others[locs] * np.pi / 180)
-            rs.append(np.abs(np.mean(r)))
-        
-        self.densities  = rs
-        return np.mean(rs)
+            vectors = np.exp(1j * y[locs] * np.pi / 180)
+            self.vectors.append(np.mean(vectors))
 
-        # compute and return the normalized KL-divergence
-        #log_n = np.log10(self.num_bins)
-        #return (log_n - numerical.shannon(self.densities)) / log_n
-
-
-
+        return np.mean(np.abs(self.vectors))
 
 
 
@@ -295,7 +338,7 @@ if __name__ == '__main__':
 
     from phasor.data.synthetic import PAC
 
-    pac = PAC(fp=10, fa=50, amp_p=1.8, amp_a=1, strength=.1)
+    pac = PAC(fp=10, fa=50, amp_p=1.8, amp_a=1, strength=.8)
     # changing the duration from 3 to 2 creates openseize problem
     # FIXME !
     time, signal = pac(3, fs=500, shift=0, sigma=0.1, seed=0)
@@ -316,7 +359,7 @@ if __name__ == '__main__':
     phases = numerical.phases(x[0])
     amplitudes = numerical.envelopes(x[1])
 
-    
+    """ 
     fig, axarr = plt.subplots(5, 1, figsize=(6, 8))
     axarr[0].plot(time, signal, label='signal')
     axarr[1].plot(time, filtered[0], label='theta filtered')
@@ -332,15 +375,18 @@ if __name__ == '__main__':
     signal_fft = np.fft.rfft(signal)
     axarr[4].plot(freqs, np.abs(signal_fft), label='Spectrum')
     [ax.legend() for ax in axarr]
+    plt.show()
+    """
 
     # plot the modulation index
+    """
     fig2, ax = plt.subplots()
     mi = ModulationIndex(num_bins=18)
     mi_result = mi(phases, amplitudes)
     mi.plot(ax)
+    """
 
 
-    plt.show()
 
     """
     mvl = VectorLength()
@@ -352,7 +398,9 @@ if __name__ == '__main__':
 
     # get the phases of the gamma envelope
     others = numerical.phases(numerical.analytic(gamma_signal))
+    #others = np.random.randint(0, 360, len(signal))
 
-    nmlock = NMLocking(num_bins=18)
-    nm_result = nmlock(phases, others)
-    print(nm_result)
+    plock = PhaseLock(num_bins=18)
+    plock_result = plock(phases, others, n=1, m=1)
+    plock.plot()
+    plt.show()
