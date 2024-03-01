@@ -1,7 +1,7 @@
 """A collection of functions used to compute numerical results in Phasor."""
 
 import itertools
-from typing import List
+from typing import List, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -77,7 +77,11 @@ def phases(analytic, deg=True):
     return x
 
 
-def shannon(pdf: npt.NDArray, axis=-1, base=np.log10) -> npt.NDArray:
+def shannon(
+    pdf: npt.NDArray,
+    axis=-1,
+    base=np.log10,
+) -> Union[float, npt.NDArray]:
     """Returns the Shannon entropy of a discrete probability distribution.
 
     Args:
@@ -94,7 +98,9 @@ def shannon(pdf: npt.NDArray, axis=-1, base=np.log10) -> npt.NDArray:
         An ndarray of 1 less dimension than pdf.
     """
 
-    return -1 * np.sum(pdf * base(pdf))
+    p = np.array(pdf)
+    p[p==0] = 1
+    return -1 * np.sum(p * base(p))
 
 
 
