@@ -98,7 +98,7 @@ phasor = ["py.typed"]
 
 # pylint configuration
 [tool.pylint]
-good-names="ax,m,n,p"
+good-names="ax,x,y,z,t,m,n,p"
 
 [tool.pylint.design]
 max-attributes = 10
