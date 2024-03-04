@@ -429,7 +429,6 @@ if __name__ == '__main__':
     phases = numerical.phases(x[0])
     amplitudes = numerical.envelopes(x[1])
 
-    """ 
     fig, axarr = plt.subplots(5, 1, figsize=(6, 8))
     axarr[0].plot(time, signal, label='signal')
     axarr[1].plot(time, filtered[0], label='theta filtered')
@@ -446,7 +445,6 @@ if __name__ == '__main__':
     axarr[4].plot(freqs, np.abs(signal_fft), label='Spectrum')
     [ax.legend() for ax in axarr]
     plt.show()
-    """
 
     # plot the modulation index
     """
@@ -464,6 +462,7 @@ if __name__ == '__main__':
     plt.show()
     """
 
+    """
     # get the phases of the gamma envelope
     others = numerical.phases(numerical.analytic(gamma_signal))
     # others = np.random.randint(0, 360, len(signal))
@@ -472,3 +471,4 @@ if __name__ == '__main__':
     pli_result = pli(phases, others, n=1, m=1)
     pli.plot()
     plt.show()
+    """
