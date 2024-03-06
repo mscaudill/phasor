@@ -29,6 +29,11 @@ from phasor.core.arraytools import pad_axis_to
 from phasor.distributions import kernels
 
 
+# FIXME either we use analytic or oversample by factor of 2 to avoid aliasing if
+# using analytic or frequencies will be -fs/4 to fs/4 due to discretization if
+# oversampling we will have -fs/2 to fs/2. You can either program each or just
+# pick one. Analytic preserves other nice properties.
+
 class Bilinear:
     """Cohen's class of Bilinear Time Frequency Distributions.
 
@@ -211,7 +216,7 @@ class Bilinear:
             Its lag can range from -3 to +3. Here are the reversed & forward
             delayed signals.
 
-             delay  s^[n-l]   s[n+l]   Autocorr.
+             l      s^[n-l]   s[n+l]   Autocorr.
             -3      [0,0,0]   [0,0,0]  [0,0,0]
             -2      [6,0,0]   [0,0,7]  [0,0,0]
             -1      [4,6,0]   [0,7,4]  [0,42,0]
@@ -278,6 +283,7 @@ class Bilinear:
         autocorr = self._autocorrelation(signal)
         return np.fft.ifft(autocorr, axis=1)
 
+    # FIXME you need clarity on the shape of the TFD freqs x times
     def __call__(
         self,
         signal: npt.NDArray,
@@ -328,11 +334,13 @@ class Bilinear:
             amb = self.ambiguity(signal)
             result = 2 * np.fft.fft2(kernel * amb)
         else:
+            print('no kernel')
             autocorr = self._autocorrelation(signal)
             result = np.fft.fft(autocorr, axis=0)
 
         times = np.arange(0, len(signal) / fs, 1 / fs)
-        freqs = 1 / 2 * np.fft.fftfreq(result.shape[0], d=1 / fs)
+        # FIXME note how 1/2 factor is due to discretization
+        freqs = 1 / 2 * np.fft.fftfreq(result.shape[0], d= 1 / fs)
 
         # place 0 frequency at center
         result = np.fft.fftshift(result, axes=0)
@@ -373,6 +381,7 @@ class Bilinear:
             slicer = slice(len(freqs) // 2, None)
 
         # get the data to plot
+        # FIXME WIGNER should use Real?
         density = np.abs(tfd)[(slicer, slice(None))]
         frequencies = freqs[slicer]
 
@@ -392,13 +401,26 @@ class Bilinear:
 if __name__ == "__main__":
     from phasor.data.synthetic import MultiSine
 
-    msine = MultiSine(amps=[1, 1], freqs=[9, 11], times=[[5.5, 9.5], [6, 10]])
-    time, signal = msine(duration=12, fs=128, sigma=0.01, seed=None)
+    msine = MultiSine(amps=[1], freqs=[9], times=[[5.5, 9.5]])
+    time, signal = msine(duration=12, fs=128, sigma=0, seed=None)
 
-    wigner = Bilinear(analytic=True)
+    wigner = Bilinear(detrend=True, analytic=True)
     # wigner.add_kernel(kernels.choi_williams, sigma=0.1)
     tfd, freqs, times = wigner(signal, fs=128)
-    wigner.plot(tfd, freqs, times, positive=True)
+    wigner.plot(tfd, freqs, times, positive=False)
+
+
+    # get the expected and observed time marginals
+    analytic_signal = sps.hilbert(signal)
+    expected = np.abs(analytic_signal)**2
+    time_marginal = np.trapz(np.abs(tfd), freqs, axis=0)
+
+    fig, ax = plt.subplots()
+    ax.plot(time, time_marginal, label='Observed Time Marginal')
+    ax.plot(time, expected, label='Expected')
+    ax.legend()
+    plt.show()
+
 
     """
     bilinear = Bilinear()
@@ -412,7 +434,7 @@ if __name__ == "__main__":
     """
     rihaczek = Bilinear()
     rihaczek.add_kernel(kernels.rihaczek)
-    rihaczek.add_kernel(kernels.choi_williams, width=0.1)
-    tfd, freqs, times = rihaczek(signal, fs=128, width=0.1)
+    rihaczek.add_kernel(kernels.choi_williams, sigma=0.1)
+    tfd, freqs, times = rihaczek(signal, fs=128)
     rihaczek.plot(tfd, freqs, times)
     """
