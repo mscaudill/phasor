@@ -108,16 +108,16 @@ def pad_axis_to(
 
     Examples:
         >>> x = np.ones((3, 4), dtype=int)
-        >>> pad_axis_to(x, 2, side='right')
+        >>> pad_axis_to(x, 6, side='right')
         array([[1, 1, 1, 1, 0, 0],
                [1, 1, 1, 1, 0, 0],
                [1, 1, 1, 1, 0, 0]])
-        >>> pad_axis_to(x, 1, side='left')
+        >>> pad_axis_to(x, 5, side='left')
         array([[0, 1, 1, 1, 1],
                [0, 1, 1, 1, 1],
                [0, 1, 1, 1, 1]])
         >>> # uneven center padding places unpaired pad on right
-        >>> pad_along_axis(x, 3, side='center')
+        >>> pad_along_axis(x, 7, side='center')
         array([[0, 1, 1, 1, 1, 0, 0],
                [0, 1, 1, 1, 1, 0, 0],
                [0, 1, 1, 1, 1, 0, 0]])
