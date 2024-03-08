@@ -97,6 +97,7 @@ class Bilinear:
         # initialize with a unitary kernel
         self.add_kernel(partial(kernels.unitary))
 
+    # FIXME validate that taus and etas are in the standard FFT order
     def domain(
         self,
         signal: npt.NDArray,
@@ -124,16 +125,13 @@ class Bilinear:
             & for even-lengthed signals abs(l) < len(signal) // 2.
         """
 
-        etas = np.fft.fftfreq(len(signal), d=1 / fs)
+        etas = np.fft.fftfreq(len(signal), d=1/fs)
         # max_shift depends on even/odd signal length
         max_shift = int(np.ceil(len(signal) / 2) - 1)
-
-        # FIXME I'm not sure these taus are in the right order!
-        taus = 2 * np.arange(-max_shift, max_shift + 1) / fs
-        # FIXME 03072024
-        taus = 2 * np.concatenate(
-                [np.arange(max_shift + 1), np.arange(-max_shift, 0)]) / fs
-
+        pos_shifts = np.arange(max_shift + 1)
+        neg_shifts = np.arange(-max_shift, 0)
+        # taus are twice the shifts
+        taus = 2 / fs * np.concatenate((pos_shifts, neg_shifts))
 
         return etas, taus
 
@@ -214,7 +212,7 @@ class Bilinear:
 
         Returns:
             A 2-D array of autocorrelations with delays along axis 0
-            & time along axis 1.
+            & samples along axis 1.
 
         Notes:
             We compute the autocorrelation using Toeplitz matrices that hold both
@@ -251,7 +249,6 @@ class Bilinear:
         if self.analytic:
             x = sps.hilbert(x)
 
-
         # make Toeplitzes with max val of l depending on even/odd signal length
         max_l = int(np.ceil(len(x) / 2) - 1)
         first_col = pad_axis_to(x[max_l::-1], 2 * max_l + 1, side="right")
@@ -260,6 +257,9 @@ class Bilinear:
         forward = np.flip(reverse, axis=0)
 
         result: npt.NDArray = np.conjugate(reverse) * forward
+
+        # FIXME shifts are along axis 0 but need to be put into FFT order
+
         return result
 
     def ambiguity(self, signal: npt.NDArray) -> npt.NDArray:
@@ -289,7 +289,9 @@ class Bilinear:
         # compute autocorrelation and ambiguity
         autocorr = self._autocorrelation(signal)
         # FIXME FFT or iFFT?
-        return np.fft.fft(autocorr, axis=1, norm='forward')
+        # here I think we need to make sure axis 0 is in the same order as taus
+        # listed in domain!!!!
+        return np.fft.fft(autocorr, axis=1)
 
     # FIXME you need clarity on the shape of the TFD freqs x times
     def __call__(
@@ -368,12 +370,20 @@ class Bilinear:
 
         # build a kernel matrix over the ambiguity domain
         etas, taus = self.domain(signal, fs)
-        print(etas)
-        print(taus)
+        #print(etas)
+        #print(taus)
         kernel = np.prod(
             np.stack([k(etas, taus) for k in self.kernels]), axis=0
         )
 
+        # FIXME 03082024
+        amb = self.ambiguity(signal)
+        # THE kernel and amb dims do not match!!!!
+        result = np.fft.ifft(kernel * amb, axis=1)
+        result = np.fft.fft(result, axis=0)
+
+
+        """ This switches to single FFT for wigner
         # if unity kernel (i.e. Wigner TFD) use faster single fft
         if np.any(kernel - 1):
             amb = self.ambiguity(signal)
@@ -385,6 +395,7 @@ class Bilinear:
             print('no kernel')
             autocorr = self._autocorrelation(signal)
             result = np.fft.fft(autocorr, axis=0)
+        """
 
         times = np.arange(0, len(signal) / fs, 1 / fs)
         # FIXME note how 1/2 factor is due to discretization
@@ -449,8 +460,10 @@ class Bilinear:
 if __name__ == "__main__":
     from phasor.data.synthetic import MultiSine
 
+    fs = 128
     msine = MultiSine(amps=[1], freqs=[9], times=[[5.5, 9.5]])
-    time, signal = msine(duration=12, fs=128, sigma=0, seed=None)
+    time, signal = msine(duration=12, fs=fs, sigma=0, seed=None)
+    plt.ion()
 
     """
     wigner = Bilinear(detrend=True, analytic=True)
@@ -474,8 +487,8 @@ if __name__ == "__main__":
 
     bilinear = Bilinear(analytic=True)
     bilinear.add_kernel(kernels.unitary)
-    bilinear.add_kernel(kernels.choi_williams, sigma=100)
-    tfd, freqs, times = bilinear(signal, fs=128)
+    #bilinear.add_kernel(kernels.choi_williams, sigma=100)
+    tfd, freqs, times = bilinear(signal, fs=fs)
     bilinear.plot(tfd, freqs, times, positive=False)
 
     """
@@ -485,3 +498,9 @@ if __name__ == "__main__":
     tfd, freqs, times = rihaczek(signal, fs=128)
     rihaczek.plot(tfd, freqs, times)
     """
+   
+    energy = np.trapz(np.trapz(np.abs(tfd), freqs, axis=0), time, axis=-1)
+    print('TFD Energy = ', energy)
+    signal_energy = np.abs(sps.hilbert(signal))**2
+    expected_energy = np.trapz(signal_energy, time)
+    print('Signal Energy = ', expected_energy)
