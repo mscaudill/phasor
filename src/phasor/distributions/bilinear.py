@@ -97,7 +97,6 @@ class Bilinear:
         # initialize with a unitary kernel
         self.add_kernel(partial(kernels.unitary))
 
-    # FIXME validate that taus and etas are in the standard FFT order
     def domain(
         self,
         signal: npt.NDArray,
@@ -118,20 +117,19 @@ class Bilinear:
 
         Returns:
             A 2-tuple of 1-D arrays of doppler frequencies & lags. The doppler
-            frequencies have shape length(signal) + 1 & are returned in the
-            order specified by numpy's fftfreq function. The doppler delays
-            range from -2l/fs to 2l/fs where l is an integer shift of the
-            signal. For odd lengthed signals the abs(l) < (len(signal) // 2 - 1)
-            & for even-lengthed signals abs(l) < len(signal) // 2.
+            frequencies have shape (len(signal), ) and contain the frequencies
+            in fftshift order (i.e. negative freqs, 0 , positive frequencies).
+            The lags are also in fftshift order and go from -2l/fs to 2l/fs
+            where m is the maximum shift of the signal. For odd lengthed signals
+            the abs(l) < (len(signal) // 2 - 1) & for even-lengthed signals the
+            abs(l) < len(signal) // 2.
         """
 
         etas = np.fft.fftfreq(len(signal), d=1/fs)
+        etas = np.fft.fftshift(etas)
         # max_shift depends on even/odd signal length
         max_shift = int(np.ceil(len(signal) / 2) - 1)
-        pos_shifts = np.arange(max_shift + 1)
-        neg_shifts = np.arange(-max_shift, 0)
-        # taus are twice the shifts
-        taus = 2 / fs * np.concatenate((pos_shifts, neg_shifts))
+        taus = 2 / fs * np.arange(-max_shift, max_shift+1)
 
         return etas, taus
 
@@ -249,6 +247,7 @@ class Bilinear:
         if self.analytic:
             x = sps.hilbert(x)
 
+        """
         # make Toeplitzes with max val of l depending on even/odd signal length
         max_l = int(np.ceil(len(x) / 2) - 1)
         first_col = pad_axis_to(x[max_l::-1], 2 * max_l + 1, side="right")
@@ -256,11 +255,31 @@ class Bilinear:
         reverse = toeplitz(first_col, first_row)
         forward = np.flip(reverse, axis=0)
 
-        result: npt.NDArray = np.conjugate(reverse) * forward
+        x: npt.NDArray = np.conjugate(reverse) * forward
+        #y: npt.NDArray = np.conjugate(forward) * reverse
+        #return x + y
+        return x
+        """
 
-        # FIXME shifts are along axis 0 but need to be put into FFT order
+        # FIXME READ FIRST
+        # the method above is the general Cohen method and it should work but
+        # when I run it I find paired positive and negative values that lead to
+        # a total energy of 0. The method below does work but seems to do so by
+        # simply setting values in between one freq and the next to 0. This is
+        # likely because we fourier transform the taus to get the frequencies
+        # but our taus actually are twice the shifts in wigner defn. In order to
+        # generalize everything to work as a Cohen's instance we need to
+        # probably upsample the signal compute the local auto correlation and
+        # ambiguity and then downsample
 
-        return result
+        # SECTION A: This method works
+        result = []
+        for shift in np.arange(-len(x), len(x) + 1):
+            rolled = np.roll(x, -1*shift)
+            rolled[-shift:] = 0
+            result.append(np.conjugate(x) * np.roll(x, -1*shift))
+        return np.array(result)
+
 
     def ambiguity(self, signal: npt.NDArray) -> npt.NDArray:
         """Returns the 2-D ambiguity matrix of a 1-D data array.
@@ -278,7 +297,8 @@ class Bilinear:
         Returns:
             An ambiguity  matrix with doppler delays (taus) along axis=0 &
             frequency shifts (etas) along axis=1. The shape will match the
-            lengths of taus and etas described in the domain method.
+            lengths of taus and etas described in the domain method. The order
+            along each axis will be in fftshift order.
 
         References:
             1. L. Cohen, "Time-frequency distributions-a review," in Proceedings of
@@ -288,10 +308,10 @@ class Bilinear:
 
         # compute autocorrelation and ambiguity
         autocorr = self._autocorrelation(signal)
-        # FIXME FFT or iFFT?
-        # here I think we need to make sure axis 0 is in the same order as taus
-        # listed in domain!!!!
-        return np.fft.fft(autocorr, axis=1)
+        result = np.fft.fft(autocorr, axis=1)
+        # shift the frequency axis placing 0 at center
+        result = np.fft.fftshift(result, axes=1)
+        return result
 
     # FIXME you need clarity on the shape of the TFD freqs x times
     def __call__(
@@ -376,11 +396,31 @@ class Bilinear:
             np.stack([k(etas, taus) for k in self.kernels]), axis=0
         )
 
-        # FIXME 03082024
         amb = self.ambiguity(signal)
-        # THE kernel and amb dims do not match!!!!
-        result = np.fft.ifft(kernel * amb, axis=1)
+        # FIXME 
+        # 1. get product of kernel and ambiguity
+        # 2. shift the product along both axes taus and etas
+        # 3. carry out ifft
+        # 4. work out normalizations
+        #
+        
+        autocorr = self._autocorrelation(signal)
+        result = np.fft.fft(autocorr, axis=0)
+
+        """
+        smoothed = np.fft.ifftshift(kernel * amb, axes=1)
+        result = np.fft.ifft(smoothed, axis=1)
         result = np.fft.fft(result, axis=0)
+        """
+
+        # shift 0 to center along frequency axis = 0
+        result = np.fft.fftshift(result, axes=0)
+
+        times = np.arange(0, len(signal) / fs, 1 / fs)
+        # FIXME note how 1/2 factor is due to discretization
+        #freqs = 1 / 2 * np.fft.fftfreq(result.shape[0], d= 1 / fs)
+        freqs = np.fft.fftfreq(result.shape[0], d= 1 / fs)
+        freqs = np.fft.fftshift(freqs)
 
 
         """ This switches to single FFT for wigner
@@ -396,7 +436,7 @@ class Bilinear:
             autocorr = self._autocorrelation(signal)
             result = np.fft.fft(autocorr, axis=0)
         """
-
+        """
         times = np.arange(0, len(signal) / fs, 1 / fs)
         # FIXME note how 1/2 factor is due to discretization
         freqs = 1 / 2 * np.fft.fftfreq(result.shape[0], d= 1 / fs)
@@ -404,6 +444,7 @@ class Bilinear:
         # place 0 frequency at center
         result = np.fft.fftshift(result, axes=0)
         freqs = np.fft.fftshift(freqs)
+        """
 
         return result, freqs, times
 
@@ -441,11 +482,12 @@ class Bilinear:
 
         # get the data to plot
         # FIXME WIGNER should use Real?
-        density = np.abs(tfd)[(slicer, slice(None))]
+        density = np.real(tfd)[(slicer, slice(None))]
         frequencies = freqs[slicer]
 
         fig, ax = plt.subplots()
         mesh = ax.pcolormesh(time, frequencies, density, shading="nearest")
+        #mesh.set_mouseover(True)
         # configure plt
         fig.colorbar(mesh, ax=ax)
         ax.set_xlabel("time (s)")
@@ -483,8 +525,7 @@ if __name__ == "__main__":
     ax.legend()
     plt.show()
     """
-
-
+    
     bilinear = Bilinear(analytic=True)
     bilinear.add_kernel(kernels.unitary)
     #bilinear.add_kernel(kernels.choi_williams, sigma=100)
@@ -499,8 +540,8 @@ if __name__ == "__main__":
     rihaczek.plot(tfd, freqs, times)
     """
    
-    energy = np.trapz(np.trapz(np.abs(tfd), freqs, axis=0), time, axis=-1)
+    tbin, fbin = np.diff(times)[0], np.diff(freqs)[0]
+    energy = np.sum(np.real(tfd)) * tbin * fbin
     print('TFD Energy = ', energy)
-    signal_energy = np.abs(sps.hilbert(signal))**2
-    expected_energy = np.trapz(signal_energy, time)
-    print('Signal Energy = ', expected_energy)
+    signal_energy = np.sum(np.abs(sps.hilbert(signal))**2)
+    print('Signal Energy = ', signal_energy)
