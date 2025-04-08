@@ -35,6 +35,9 @@ sandbox/
 #Deprecated
 __depr__/
 
+# Scripting
+scripts/
+
 # C extensions
 *.so
 
