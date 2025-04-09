@@ -80,8 +80,13 @@ class CompactAnalytic:
         n = self.data.shape[self.axis]
         filt = self.ftype(fpass, fstop, self.fs, **kwargs)
         filtered = filt(self.data, chunksize=n, axis=self.axis)
+        # FIXME
+        # need to add optional normalization
+        mu = np.mean(filtered, axis=self.axis, keepdims=True)
+        std = np.std(filtered, axis=self.axis, keepdims=True)
+        normed = (filtered - mu) / std
 
-        return sps.hilbert(filtered, axis=self.axis)
+        return sps.hilbert(normed, axis=self.axis)
 
 
     def envelope(
