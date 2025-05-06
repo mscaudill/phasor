@@ -1,6 +1,6 @@
 """A collection of tools for working with numpy ndarrays."""
 
-from typing import Sequence
+from typing import Literal, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -141,4 +141,40 @@ def pad_axis_to(
         'center': [pad_amt // 2, pad_amt // 2 + pad_amt % 2],
     }
     return pad_along_axis(arr, pads[side.lower()], axis=axis, **kwargs)
+
+
+def standardize(
+    x: npt.NDArray[np.float64],
+    axis: int,
+    make_copy: bool = True,
+    invalid: Literal['ignore', 'raise'] = 'raise',
+) -> npt.NDArray:
+    """Standardizes an ndarray along a single axis with graceful error handling.
+
+    Args:
+        x:
+            An array to be standardized.
+        axis:
+            The axis of x along standardization occurs.
+        make_copy:
+            A boolean indicating if the x should be modified in-place (False)
+            or copied (True).
+        invalid:
+            Floating-point error handling for zero-division that can occur if
+            any slice along axis of x has constant values. Value must be one of
+            {'raise', 'ignore'}. If 'ignore' the returned result will have
+            np.nan values.
+
+    Returns:
+        An ndarray of the same shape as x but whose values have been z-scored
+        using the mean and standard deviation along axis.
+    """
+
+    z = np.copy(x) if make_copy else x
+    z = z - np.mean(z, axis=axis, keepdims=True)
+    std = np.std(z, axis=axis, keepdims=True)
+    with np.errstate(invalid=invalid):
+        result: npt.NDArray = z / std
+
+    return result
 
