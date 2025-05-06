@@ -11,13 +11,14 @@ from openseize.filtering.bases import FIR
 from openseize.filtering import fir
 
 
-class CompactAnalytic:
+class Analytic:
     """The band-limited Hilbert transform of a real-valued signal.
 
     Signals have analytic representations only when the Fourier transform has
-    compact frequency support (i.e. band-limited). The amplitude and phase
+    compact frequency support (i.e. narrow-band). The amplitude and phase
     methods of this transform accept filter passbands to compute the analytic
-    representation over band-limited frequency ranges.
+    representation over narrow band frequency ranges. This method uses scipy's
+    hilbert method which zeros the negative components of the FFT.
 
     Attributes:
         data:
@@ -33,10 +34,8 @@ class CompactAnalytic:
     References:
         1. https://en.wikipedia.org/wiki/Analytic_signal
         2. https://en.wikipedia.org/wiki/Hilbert_transform
-        3. Tort AB, Komorowski R, Eichenbaum H, Kopell N. Measuring
-           phase-amplitude coupling between neuronal oscillations of different
-           frequencies. J Neurophysiol. 2010 Aug; 104(2):1195-210. doi:
-           10.1152/jn.00106.2010.
+        3. Conolty R.T. et al. High Gamma Power is Phase-Locked to Theta
+           Oscillations in Human Neocortex. Science 2006.
     """
 
     def __init__(
@@ -58,9 +57,10 @@ class CompactAnalytic:
         self,
         fpass: Sequence[float],
         fstop: Sequence[float],
+        standardize: bool,
         **kwargs,
     ) -> npt.NDArray[np.complex_]:
-        """Returns the analytic representation of each signal in data  in the passband frequencies.
+        """Returns the analytic representation of each signal in data.
 
         Args:
             fpass:
@@ -79,23 +79,25 @@ class CompactAnalytic:
 
         n = self.data.shape[self.axis]
         filt = self.ftype(fpass, fstop, self.fs, **kwargs)
-        filtered = filt(self.data, chunksize=n, axis=self.axis)
-        # FIXME
-        # need to add optional normalization
-        mu = np.mean(filtered, axis=self.axis, keepdims=True)
-        std = np.std(filtered, axis=self.axis, keepdims=True)
-        normed = (filtered - mu) / std
+        x = filt(self.data, chunksize=n, axis=self.axis)
 
-        return sps.hilbert(normed, axis=self.axis)
+        if standardize:
+            mu = np.mean(x, axis=self.axis, keepdims=True)
+            std = np.std(x, axis=self.axis, keepdims=True)
+            x -= mu
+            x /= std
+
+        return sps.hilbert(x, axis=self.axis)
 
 
     def envelope(
         self,
         fpass: Sequence[float],
         fstop: Sequence[float],
+        standardize: bool = True,
         **kwargs,
     ) -> npt.NDArray[np.float_]:
-        """Returns the envelope amplitudes of the real component of the analytic
+        """Returns the envelope amplitude of the real component of the analytic
         signal in the passband frequencies.
 
         Args:
@@ -105,6 +107,8 @@ class CompactAnalytic:
                 A 2-el sequence of start and stop stopband frequences. The
                 difference of these frequencies with fpass define the transition
                 widths.
+            standardize:
+                A boolean indicating if filtered signals should be standardized.
             **kwargs:
                 Any valid kwargs for this transforms filter.
 
@@ -113,7 +117,7 @@ class CompactAnalytic:
         """
 
         # compute the filtered and analytic signal
-        analytic = self.signal(fpass, fstop, **kwargs)
+        analytic = self.signal(fpass, fstop, standardize, **kwargs)
 
         return np.abs(analytic)
 
@@ -145,8 +149,8 @@ class CompactAnalytic:
             A real-valued array of phases in radians with the same shape as data.
         """
 
-        # compute the filtered and nalytic signal
-        analytic = self.signal(fpass, fstop, **kwargs)
+        # compute analytic signal -- standardization is not needed for phase
+        analytic = self.signal(fpass, fstop, standardize=False, **kwargs)
         result = np.angle(analytic)
         # convert to [0, 2*pi)
         result[result < 0] += 2 * np.pi
@@ -166,8 +170,9 @@ if __name__ == '__main__':
     pac = PAC(fp=10, fa=50, amp_p=1.8, amp_a=1, strength=0.8)
     time, signal = pac(3, fs=500, shift=0, sigma=0.1, seed=0)
 
-    hilbert = CompactAnalytic(signal, fs=500)
-    amplitudes = hilbert.envelope(fpass=[40, 60], fstop=[35, 65]) 
+    hilbert = Analytic(signal, fs=500)
+    amplitudes = hilbert.envelope(fpass=[40, 60], fstop=[35, 65],
+            standardize=True) 
     phases = hilbert.phase(fpass=[4, 10], fstop=[2, 12])
 
 
@@ -177,6 +182,8 @@ if __name__ == '__main__':
 
     amp_kaiser = Kaiser(fpass=[40, 60], fstop=[35, 65], fs=500)
     gamma_signal = amp_kaiser(signal, chunksize=len(signal), axis=-1)
+    gamma_signal -= np.mean(gamma_signal, keepdims=True)
+    gamma_signal /= np.std(gamma_signal, keepdims=True)
 
 
     fig, axarr = plt.subplots(4, 1, figsize=(6, 8))
@@ -189,4 +196,7 @@ if __name__ == '__main__':
     axarr[0].sharex(axarr[1])
     axarr[1].sharex(axarr[2])
     axarr[2].sharex(axarr[3])
+    [ax.legend() for ax in axarr]
+
+    plt.show()
 
